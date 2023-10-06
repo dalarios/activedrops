@@ -47,6 +47,10 @@
 *.pages
 *.key
 *.pdf
+*.tif
+*.tiff
+*.avi
+*.txt
 
 #Ignore LaTeX helper files
 *.blg
