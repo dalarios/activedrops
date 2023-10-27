@@ -1,0 +1,56 @@
+project:
+  type: website
+  output-dir: ../docs
+  render:
+    - paper.qmd
+
+# Title
+title: "ActiveDROPS paper"
+
+# Authors
+author:
+  - name: David Larios
+    orcid: 
+    email: mrazo@stanford.edu
+    affiliations: 
+      - ref: caltech
+
+# Author affiliations
+affiliations:
+  - id: caltech
+    number: 1
+    name: BBE, Caltech
+    city: Pasadena
+    state: CA
+    country: USA
+    
+# Keywords
+keywords:
+  - active matter
+
+# Abstract
+abstract: >
+  The abstract.
+
+number-sections: false
+# bibliography: references.bib
+
+website:
+  sidebar:
+    alignment: left
+    title: "Sidebar"
+
+format:
+  html:
+    theme: cosmo
+    default-image-extension: png
+    toc: true
+  pdf: 
+    documentclass: scrartcl
+    template: template.tex
+    include-in-header:
+      - file: _preamble.tex
+    cite-method: biblatex
+    biblio-style: phys
+    keep-tex: true
+  docx: default

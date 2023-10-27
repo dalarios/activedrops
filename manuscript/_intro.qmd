@@ -1,0 +1,13 @@
+---
+editor:
+    render-on-save: true
+# bibliography: references.bib
+---
+
+ese es el setup
+
+$$
+\mathcal{F}[q_\phi(\underline{\theta})] \geq - \ln \pi(\underline{x})
+$${#eq-intro_free}
+
+as shown in @eq-intro_free this is the real deal, biatch. As mentioned in @sec-intro
