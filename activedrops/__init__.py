@@ -3,6 +3,7 @@
 """Top level package for ActiveDROPS project"""
 
 from . import viz
+from . import pivdrops
 
 
 _author_ = """David Larios"""

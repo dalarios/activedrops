@@ -302,3 +302,123 @@ def generate_image_sequence(dfs, plot_type, dir_name, labels, x_limits=None, y_l
             filename=f"{plot_dir}/{plot_type}_plot_{i}.jpg",
             **kwargs  # Forward the additional keyword arguments to the inner plotting function
         )
+
+
+
+
+
+import os
+import glob
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy.interpolate import griddata
+from tqdm import tqdm
+
+def plot_feature_heatmaps(feature_keywords, input_dir, output_dir, display_single_frame=False):
+    """
+    Plots combined heatmaps for the given features across all frames and saves them.
+    
+    Args:
+    - feature_keywords (list of str): Keywords representing the desired features (e.g., ["velocity", "vorticity"]).
+    - input_dir (str): Directory where the .txt files are located.
+    - output_dir (str): Directory where the output plots should be saved.
+    - display_single_frame (bool): If True, displays the heatmap of the first frame in the notebook itself.
+    """
+    
+    # Mapping from user-friendly keywords to actual column names in the .txt files
+    feature_mapping = {
+        'velocity': 'magnitude [μm/s]',
+        'vorticity': 'vorticity [1/s]',
+        'divergence': 'divergence [1/s]',
+        'shear': 'simple shear [1/s]',
+        'strain': 'simple strain [1/s]'
+    }
+    
+    # Mapping from feature to colormap
+    colormap_mapping = {
+        'velocity': 'viridis',
+        'vorticity': 'bwr',
+        'divergence': 'Set2',
+        'shear': 'PiYG',
+        'strain': 'coolwarm'
+    }
+    
+    # Create combined feature name for folder and filenames
+    combined_name = "_".join(feature_keywords) + ("_heatmap" if len(feature_keywords) > 1 else "")
+    
+    # Pattern for input .txt files
+    input_pattern = os.path.join(input_dir, 'PIVlab_*.txt')
+    
+    # Create a dictionary to store global min and max values for each feature
+    global_feature_range = {keyword: [float('inf'), float('-inf')] for keyword in feature_keywords}
+
+    for filepath in glob.glob(input_pattern):
+        df = pd.read_csv(filepath, sep=',', skiprows=2)
+        
+        # Add a new column for velocity in micrometers per second (μm/s)
+        if 'magnitude [m/s]' in df.columns and 'magnitude [μm/s]' not in df.columns:
+            df['magnitude [μm/s]'] = df['magnitude [m/s]'] * 1e6
+        
+        for keyword in feature_keywords:
+            feature_column = feature_mapping[keyword]
+            local_min = df[feature_column].min()
+            local_max = df[feature_column].max()
+            global_feature_range[keyword][0] = min(global_feature_range[keyword][0], local_min)
+            global_feature_range[keyword][1] = max(global_feature_range[keyword][1], local_max)
+    
+    # Construct a new sub-directory path
+    sub_dir = os.path.join(output_dir, combined_name)
+
+    # Ensure the sub-directory exists
+    if not os.path.exists(sub_dir) and not display_single_frame:
+        os.makedirs(sub_dir)
+
+    # Use these values to fix the range of the colormap when plotting each heatmap
+    filepaths = sorted(glob.glob(input_pattern))
+    
+    for filepath in filepaths:
+        frame_num = os.path.basename(filepath).split('_')[-1].split('.')[0]
+        df = pd.read_csv(filepath, sep=',', skiprows=2)
+        df['x [mm]'] = df['x [m]'] * 1000
+        df['y [mm]'] = df['y [m]'] * 1000
+        
+        # Ensure the velocity column in micrometers per second is present
+        if 'magnitude [m/s]' in df.columns and 'magnitude [μm/s]' not in df.columns:
+            df['magnitude [μm/s]'] = df['magnitude [m/s]'] * 1e6
+        
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        for keyword in feature_keywords:
+            feature_column = feature_mapping[keyword]
+            x = df['x [mm]'].values
+            y = df['y [mm]'].values
+            feature_values = df[feature_column].values
+
+            xi = np.linspace(x.min(), x.max(), len(np.unique(x)))
+            yi = np.linspace(y.min(), y.max(), len(np.unique(y)))
+            zi = griddata((x, y), feature_values, (xi[None, :], yi[:, None]), method='linear')
+
+            cmap = colormap_mapping[keyword]
+            alpha = 0.5 if keyword != 'velocity' else 1.0  # Adjust alpha for overlapping
+
+            c = ax.pcolormesh(xi, yi, zi, shading='auto', cmap=cmap, alpha=alpha, 
+                              vmin=global_feature_range[keyword][0], 
+                              vmax=global_feature_range[keyword][1])
+            fig.colorbar(c, ax=ax, label=feature_column)
+
+        ax.set_title(f"{combined_name.replace('_', ' ').title()} - Frame {frame_num}")
+        ax.set_xlabel("x [mm]")
+        ax.set_ylabel("y [mm]")
+
+        # If display_single_frame is True, show the plot for the first frame and return
+        if display_single_frame:
+            plt.show()
+            return "Displayed the heatmap for the first frame in the notebook!"
+        
+        filename = f'{combined_name}_{frame_num}.png'
+        fig.savefig(os.path.join(sub_dir, filename))
+        plt.close(fig)
+
+    return f"Global min and max of features determined, and all combined plots saved in {sub_dir}!"
+
