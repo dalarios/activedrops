@@ -4,6 +4,7 @@
 
 from . import viz
 from . import pivdrops
+from . import autocorrelation
 
 
 _author_ = """David Larios"""
