@@ -17,11 +17,24 @@ Purpose:
 """
 
 def load_and_convert_data(file_path):
+    """
+    Load PIV data from a given file path and convert units of position and velocity.
+    
+    Parameters:
+    - file_path (str): Path to the .txt file containing the PIV data.
+    
+    Returns:
+    - df (DataFrame): Processed data with columns ['x [um]', 'y [um]', 'u [um/s]', 'v [um/s]'].
+    """
+    
+    # Load the data from the file, skipping the first two rows (header and metadata)
     df = pd.read_csv(file_path, sep=',', skiprows=2)
     
-    # Convert position and velocity to microns and microns/second
+    # Convert position from meters to micrometers
     df['x [um]'] = df['x [m]'] * 1E6
     df['y [um]'] = df['y [m]'] * 1E6
+    
+    # Convert velocity from meters/second to micrometers/second
     df['u [um/s]'] = df['u [m/s]'] * 1E6
     df['v [um/s]'] = df['v [m/s]'] * 1E6
     
@@ -29,6 +42,8 @@ def load_and_convert_data(file_path):
     df = df[['x [um]', 'y [um]', 'u [um/s]', 'v [um/s]']]
     
     return df
+
+
 
 
 
