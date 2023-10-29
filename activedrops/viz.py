@@ -34,7 +34,7 @@ def set_plotting_style():
           'axes.facecolor': '#E3DCD0',
           'xtick.labelsize': 7,
           'ytick.labelsize': 7,
-          'font.family': 'Lucida Sans Unicode',
+        #   'font.family': 'Lucida Sans Unicode',
           'grid.linestyle': '-',
           'grid.linewidth': 0.5,
           'grid.color': '#ffffff',
