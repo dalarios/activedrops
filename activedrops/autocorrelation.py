@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 
 
 import ipywidgets as widgets
+from ipywidgets import interact, IntSlider
 from IPython.display import display
 from bokeh.plotting import figure, show, output_notebook
 from bokeh.models import HoverTool, ColumnDataSource, ColorBar
@@ -29,7 +30,7 @@ Purpose:
 """
 
 
-def autocorrelation_movie(file_paths, r_values=50, output_dir=None):
+def autocorrelation_movie(file_paths, sint=3, r_values=50, output_dir=None):
     """
     Processes a list of file paths and extracts various autocorrelation metrics.
     
@@ -76,6 +77,7 @@ def autocorrelation_movie(file_paths, r_values=50, output_dir=None):
         u = df.pivot(index='y [um]', columns='x [um]', values='u [um/s]').values
         v = df.pivot(index='y [um]', columns='x [um]', values='v [um/s]').values
         
+        
         # Compute the magnitude and its Fourier transform
         magnitude = np.sqrt(u**2 + v**2)
         full_product = np.fft.fft2(magnitude) * np.conj(np.fft.fft2(magnitude))
@@ -95,19 +97,19 @@ def autocorrelation_movie(file_paths, r_values=50, output_dir=None):
         A, B, C = params
         fitted_values = exponential_decay(np.arange(r_values), A, B, C)
         
-        lambda_tau = -B * np.log((0.3 - C) / A) 
+        lambda_tau = -B * np.log(((1/np.e) - C) / A) 
         
         return lambda_tau, inverse, results, fitted_values
     
     data = []
     for idx, file_path in enumerate(file_paths):
         lambda_tau, inverse, results, fitted_values = autocorrelation(file_path, r_values)
-        time_minutes = (idx * 3) / 60  # Compute time in minutes
+        time_minutes = (idx * sint) / 60  # Compute time in minutes
         data.append([os.path.basename(file_path), time_minutes, lambda_tau, inverse, results, fitted_values])
     
     # Convert the data to a dataframe
     df = pd.DataFrame(data, columns=['file_name', 'time [min]', 'Correlation Length', 'inverse', 'results', 'fitted_values'])
-    
+    df['Correlation Length'] = df['Correlation Length'] * 21.75  # Convert to microns
     # Save DataFrame to CSV if output_dir is provided
     if output_dir:
         # Ensure the directory exists
@@ -133,10 +135,10 @@ def autocorrelation_csv(path_df):
 
 
 
-    # Generate dynamic colors based on number of frames using a colormap
 def plot_autocorrelation_values_multiple_frames(df):
     """
-    Plots the autocorrelation values and the fitted exponential decay for multiple frames.
+    Plots the autocorrelation values and the fitted exponential decay for multiple frames,
+    with the lag values scaled by a factor of 21.75.
     
     Parameters:
     - df (DataFrame): DataFrame containing 'Correlation Length', 'results', and 'fitted_values' columns.
@@ -144,63 +146,67 @@ def plot_autocorrelation_values_multiple_frames(df):
     Returns:
     - None: Displays the plot.
     """
-    
+    # Set the size of the plot
     plt.figure(figsize=(12, 7))
-    
 
     def generate_dynamic_colors(n):
         """
         Generate a list of distinct colors based on the number of frames using a colormap.
-
+        
         Parameters:
         - n (int): Number of required colors.
-
+        
         Returns:
         - list: List of RGBA colors.
         """
-        colormap = plt.cm.viridis  # using the 'viridis' colormap, but this can be changed to any other colormap
+        colormap = plt.cm.viridis  # Using the 'viridis' colormap
         return [colormap(i) for i in np.linspace(0, 1, n)]
 
     # Get dynamic colors based on the number of frames
     colors = generate_dynamic_colors(len(df))
     
+    # Iterate over each row to plot the data and fits
     for idx, row in df.iterrows():
         lambda_tau = row['Correlation Length']
         results = row['results']
         fitted_values = row['fitted_values']
-        
+        lags = np.arange(len(results)) * 21.75  # Scale the lag values by 21.75
+
         # Plot autocorrelation values and fitted exponential decay
-        plt.plot(results, marker='o', linestyle='-', markersize=5, color=colors[idx], label=f'Frame {idx} Data')
-        plt.plot(fitted_values, linestyle='--', color=colors[idx], label=f'Frame {idx} Fit')
+        plt.plot(lags, results, marker='o', linestyle='-', markersize=5, color=colors[idx], label=f'Frame {idx} Data')
+        plt.plot(lags, fitted_values, linestyle='--', color=colors[idx], label=f'Frame {idx} Fit')
         plt.axvline(x=lambda_tau, color=colors[idx], linestyle='-.', linewidth=0.8, label=f'Correlation Length (Frame {idx}) = {lambda_tau:.2f}')
     
-    # Adding labels, title, and legend
+    # Adding labels, title, and legend to the plot
     plt.xlabel('Lag')
     plt.ylabel('Autocorrelation')
     plt.title('Autocorrelation Function and Fitted Exponential Decay for Multiple Frames')
     plt.legend(loc='upper right', fontsize='small')
     plt.grid(True, which='both', linestyle='--', linewidth=0.5)
-    plt.tight_layout()
-    plt.show()
+    plt.tight_layout()  # Adjust the layout to fit all components
+    plt.show()  # Display the plot
+
 
 
 
 def plot_histogram(dataframe, bins=None):
     """
-    Manually plots a histogram of correlation lengths in viridis colors 
-    and fits the data to a normal distribution with a black line.
+    Plots a histogram of correlation lengths using viridis colors and displays the mean and standard deviation.
     
     Parameters:
     - dataframe (DataFrame): Dataframe with the necessary data.
     - bins (int, optional): Number of bins for the histogram. If None, will use the number of unique values.
     
     Returns:
-    - mu (float): Mean of the fitted normal distribution.
-    - std (float): Standard deviation of the fitted normal distribution.
+    - None: The function plots the histogram and shows it.
     """
     # Extract the correlation lengths and clean any non-finite values
     cl_values = dataframe['Correlation Length'].dropna().values
     cl_values = cl_values[np.isfinite(cl_values)]
+    
+    # Calculate mean and standard deviation
+    mean_value = np.mean(cl_values)
+    std_dev = np.std(cl_values)
     
     # Set default bins to the number of unique values if not provided
     if bins is None:
@@ -208,95 +214,117 @@ def plot_histogram(dataframe, bins=None):
     
     # Compute the histogram manually
     counts, bin_edges = np.histogram(cl_values, bins=bins, density=True)
-    bin_width = bin_edges[1] - bin_edges[0]
-    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
     
     plt.figure(figsize=(12, 7))
     
     # Get colormap colors
     colormap = plt.cm.viridis
-    colors = colormap(np.linspace(0, 1, len(counts)))
+    normalize = plt.Normalize(vmin=min(counts), vmax=max(counts))
+    colors = colormap(normalize(counts))
     
     # Plot histogram bars manually with viridis colors
-    for center, count, color in zip(bin_centers, counts, colors):
-        plt.bar(center, count, width=bin_width, align='center', color=color)
+    for edge_left, count, color in zip(bin_edges[:-1], counts, colors):
+        plt.bar(edge_left, count, width=bin_edges[1] - bin_edges[0], align='edge', color=color)
     
-    # Fit a normal distribution to the data
-    mu, std = norm.fit(cl_values)
+    # Create a legend
+    plt.legend(['Mean: {:.2f}\nStd: {:.2f}'.format(mean_value, std_dev)])
     
-    # Plot the fitted distribution
-    xmin, xmax = plt.xlim()
-    x = np.linspace(xmin, xmax, 100)
-    p = norm.pdf(x, mu, std)
-    plt.plot(x, p, 'k-', linewidth=2)
-    plt.title(f"Fit results: Mean = {mu:.2f}, Std. Dev. = {std:.2f}")
+    plt.title('Histogram of Correlation Lengths')
     plt.xlabel('Correlation Lengths')
     plt.ylabel('Density')
     plt.grid(True, which='both', linestyle='--', linewidth=0.5)
     plt.tight_layout()
     plt.show()
+
+    return None
+
+
     
-    return mu, std
 
 
-def histogram_animated(dataframe):
+def plot_histogram_animated(dataframe):
+    """
+    Plots an interactive histogram of correlation lengths using viridis colors, with a slider to adjust the number of bins,
+    and a legend showing the mean and standard deviation.
+    
+    Parameters:
+    - dataframe (DataFrame): Dataframe with the necessary data.
+    
+    Returns:
+    - None: The function creates an interactive histogram plot.
+    """
     # Extract the correlation lengths and clean any non-finite values
     cl_values = dataframe['Correlation Length'].dropna().values
     cl_values = cl_values[np.isfinite(cl_values)]
-    max_bins = len(cl_values)
+    max_bins = len(np.unique(cl_values))  # Maximum number of bins for the slider
+    
+    # Calculate mean and standard deviation
+    mean_value = np.mean(cl_values)
+    std_dev = np.std(cl_values)
 
-    @widgets.interact(bins=widgets.IntSlider(min=1, max=max_bins, step=1, value=max_bins, description='Bins:'))
-    def interactive_plot(bins):
+    @interact(bins=IntSlider(min=1, max=max_bins, step=1, value=200, description='Bins:'))
+    def update_histogram(bins):
         plt.figure(figsize=(12, 7))
-
+        
         # Compute the histogram manually
         counts, bin_edges = np.histogram(cl_values, bins=bins, density=True)
-        bin_width = bin_edges[1] - bin_edges[0]
-        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-
+        
         # Get colormap colors
         colormap = plt.cm.viridis
-        colors = colormap(np.linspace(0, 1, len(counts)))
-
+        normalize = plt.Normalize(vmin=min(counts), vmax=max(counts))
+        colors = colormap(normalize(counts))
+        
+        # Clear the current axes
+        plt.gca().clear()
+        
         # Plot histogram bars manually with viridis colors
-        for center, count, color in zip(bin_centers, counts, colors):
-            plt.bar(center, count, width=bin_width, align='center', color=color)
-
-        # Fit a normal distribution to the data
-        mu, std = norm.fit(cl_values)
-
-        # Plot the fitted distribution
-        xmin, xmax = plt.xlim()
-        x = np.linspace(xmin, xmax, 100)
-        p = norm.pdf(x, mu, std)
-        plt.plot(x, p, 'k-', linewidth=2)
+        for edge_left, count, color in zip(bin_edges[:-1], counts, colors):
+            plt.bar(edge_left, count, width=bin_edges[1] - bin_edges[0], align='edge', color=color)
         
-        # Vertical dashed line for the mean
-        plt.axvline(mu, color='red', linestyle='dashed', linewidth=1.5)
+        # Create a legend for mean and standard deviation
+        legend_label = f'Mean: {mean_value:.2f}\nStd Dev: {std_dev:.2f}'
+        plt.legend([legend_label])
         
-        # Title and labels
-        plt.title(f"Fit results: Mean = {mu:.2f}, Std. Dev. = {std:.2f}")
+        plt.title('Interactive Histogram of Correlation Lengths')
         plt.xlabel('Correlation Lengths')
         plt.ylabel('Density')
-        
-        # Enhance x-axis ticks for more clarity
-        plt.xticks(np.linspace(xmin, xmax, min(20, bins)))
-        
         plt.grid(True, which='both', linestyle='--', linewidth=0.5)
         plt.tight_layout()
         plt.show()
 
+    return None
 
 
-def plot_autocorrelation_length_vs_time(df):
+
+
+
+
+def plot_autocorrelation_length_vs_time(df, time_hours=False):
     """
-    Plots the correlation length against time with interpolation, filtering out non-finite values.
-    
+    Plots the autocorrelation length as a function of time with interpolation, providing a visual representation 
+    of how the correlation length evolves. It filters out non-finite values before plotting and can represent 
+    time in minutes or hours.
+
+    This function uses a scatter plot to represent individual data points with heatmap coloring based on the 
+    correlation length values and applies a cubic spline interpolation to create a smooth curve that goes through 
+    the data points.
+
     Parameters:
-    - df (DataFrame): DataFrame containing 'time [min]' and 'Correlation Length' columns.
-    
+    - df (DataFrame): A pandas DataFrame containing the data to plot. It must include the following columns:
+        - 'time [min]': The time values in minutes.
+        - 'Correlation Length': The correlation length values corresponding to each time point.
+    - time_hours (bool): If True, the time axis will be plotted in hours instead of minutes.
+
     Returns:
-    - None: Displays the plot.
+    - None: The function does not return any values. Instead, it displays a plot with the interpolated correlation 
+            length over time. The plot includes a colorbar indicating the magnitude of the correlation length, axis 
+            labels, a title, and a grid for easier interpretation of the data.
+
+    Note:
+    - The function assumes that the input DataFrame is pre-processed to contain the necessary columns and that the 
+      'Correlation Length' column contains numerical data.
+    - The cubic spline interpolation requires that there are no NaNs or infinite values in the 'Correlation Length' 
+      column, hence the pre-filtering.
     """
     
     plt.figure(figsize=(14, 8))
@@ -304,18 +332,23 @@ def plot_autocorrelation_length_vs_time(df):
     # Filter out non-finite values
     df_filtered = df[df['Correlation Length'].notna() & np.isfinite(df['Correlation Length'])]
     
+    # Determine the time for plotting and labeling
+    time_label = 'Time (hours)' if time_hours else 'Time (min)'
+    times = df_filtered['time [min]'] / 60 if time_hours else df_filtered['time [min]']
+    
     # Use scatter for heatmap coloring
-    plt.scatter(df_filtered['time [min]'], df_filtered['Correlation Length'], 
+    plt.scatter(times, df_filtered['Correlation Length'], 
                 c=df_filtered['Correlation Length'], cmap='viridis', s=100, edgecolor='black')
     
     # Interpolate using cubic spline
     cs = CubicSpline(df_filtered['time [min]'], df_filtered['Correlation Length'])
-    times = np.linspace(df_filtered['time [min]'].min(), df_filtered['time [min]'].max(), 500)
-    plt.plot(times, cs(times), 'r-')
+    time_values_for_interpolation = np.linspace(df_filtered['time [min]'].min(), df_filtered['time [min]'].max(), 500)
+    interpolated_times = time_values_for_interpolation / 60 if time_hours else time_values_for_interpolation
+    plt.plot(interpolated_times, cs(time_values_for_interpolation), 'r-')
     
     # Add labels, title, and colorbar
     plt.colorbar(label='Correlation Length')
-    plt.xlabel('Time (min)')
+    plt.xlabel(time_label)
     plt.ylabel('Correlation Length')
     plt.title('Correlation Length vs. Time')
     plt.grid(True)
@@ -324,46 +357,66 @@ def plot_autocorrelation_length_vs_time(df):
 
 
 
-def plot_correlation_length_vs_time_interactive(df_correlation_length):
+
+def plot_correlation_length_vs_time_interactive(df_correlation_length, time_hours=False):
     """
-    Plot correlation length against time using provided DataFrame with Bokeh, color the y-values with a heatmap in viridis,
-    and connect the points with an interpolated line. Tooltips display the correlation length on hover.
-    
+    Plot correlation length against time using provided DataFrame with Bokeh. Points are colored with a heatmap in viridis
+    based on the y-values, and they are connected with an interpolated line. Tooltips display the correlation length and
+    optionally the file name on hover.
+
+    This interactive plot allows for dynamic exploration of the data points and the trend line, with the ability to zoom,
+    pan, and hover for more detailed information.
+
     Parameters:
-    - df_correlation_length (DataFrame): DataFrame with columns for time (in minutes) and correlation length.
-    
+    - df_correlation_length (DataFrame): DataFrame with columns for time (in minutes), correlation length, and file name.
+    - time_hours (bool): If True, the time axis will be plotted in hours instead of minutes.
+
     Returns:
-    - None: Displays the interactive plot.
+    - None: Displays the interactive plot within the Jupyter notebook.
     """
+    # Fill NaN with mean of the column
     df_correlation_length["Correlation Length"] = df_correlation_length["Correlation Length"].fillna(df_correlation_length["Correlation Length"].mean())
 
+    # Convert 'time [min]' to hours if necessary
+    if time_hours:
+        df_correlation_length['time'] = df_correlation_length['time [min]'] / 60
+        x_axis_label = 'Time (hours)'
+    else:
+        df_correlation_length['time'] = df_correlation_length['time [min]']
+        x_axis_label = 'Time (min)'
+
     # Interpolate using cubic spline
-    cs = CubicSpline(df_correlation_length['time [min]'], df_correlation_length['Correlation Length'])
-    times = np.linspace(df_correlation_length['time [min]'].min(), df_correlation_length['time [min]'].max(), 500)
-    
+    cs = CubicSpline(df_correlation_length['time'], df_correlation_length['Correlation Length'])
+    times_interpolated = np.linspace(df_correlation_length['time'].min(), df_correlation_length['time'].max(), 500)
+
     # Set up the Bokeh plot
     p = figure(width=800, height=400, title='Correlation Length vs. Time with Interpolation',
-               x_axis_label='time [min]', y_axis_label='Correlation Length', tools='')
-    
-    # Add the data points with hover info
-    mapper = linear_cmap(field_name='Correlation Length', palette=Viridis256, 
-                         low=min(df_correlation_length['Correlation Length']), 
+               x_axis_label=x_axis_label, y_axis_label='Correlation Length', tools='')
+
+    # Color mapping
+    mapper = linear_cmap(field_name='Correlation Length', palette=Viridis256,
+                         low=min(df_correlation_length['Correlation Length']),
                          high=max(df_correlation_length['Correlation Length']))
-    
+
     source = ColumnDataSource(df_correlation_length)
-    p.scatter(x='time [min]', y='Correlation Length', source=source, size=10, color=mapper, alpha=1)  # Added alpha for transparency
-    
+    p.scatter(x='time', y='Correlation Length', source=source, size=10, color=mapper, alpha=1)
+
     # Add the interpolated line (after scatter to ensure it's on top)
-    p.line(times, cs(times), line_color='orange', line_width=2)
-    
-    # Add hover tool
+    p.line(times_interpolated, cs(times_interpolated), line_color='orange', line_width=2)
+
+    # Add hover tool with file name
     hover = HoverTool()
-    hover.tooltips = [("Correlation Length", "@{Correlation Length}"), ("File Name", "@{file_name}")]
+    hover.tooltips = [
+        ("Correlation Length", "@{Correlation Length}"),
+        ("Time", "@{time}"),
+        ("File Name", "@{file_name}")  # Add the file name to the hover tooltip
+    ]
+
     p.add_tools(hover)
-    
+
     # Color bar
     color_bar = ColorBar(color_mapper=mapper['transform'], width=8, location=(0,0))
     p.add_layout(color_bar, 'right')
-    
+
     output_notebook()
     show(p)
