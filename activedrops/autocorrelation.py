@@ -77,6 +77,8 @@ def autocorrelation_movie(file_paths, sint=3, r_values=50, output_dir=None):
         u = df.pivot(index='y [um]', columns='x [um]', values='u [um/s]').values
         v = df.pivot(index='y [um]', columns='x [um]', values='v [um/s]').values
         
+        # u = u - np.mean(u)
+        # v = v - np.mean(v)
         
         # Compute the magnitude and its Fourier transform
         magnitude = np.sqrt(u**2 + v**2)
@@ -109,7 +111,7 @@ def autocorrelation_movie(file_paths, sint=3, r_values=50, output_dir=None):
     
     # Convert the data to a dataframe
     df = pd.DataFrame(data, columns=['file_name', 'time [min]', 'Correlation Length', 'inverse', 'results', 'fitted_values'])
-    df['Correlation Length'] = df['Correlation Length'] * 21.75  # Convert to microns
+    df['Correlation Length'] = df['Correlation Length'] * 22  # Convert to microns
     # Save DataFrame to CSV if output_dir is provided
     if output_dir:
         # Ensure the directory exists
@@ -138,7 +140,7 @@ def autocorrelation_csv(path_df):
 def plot_autocorrelation_values_multiple_frames(df):
     """
     Plots the autocorrelation values and the fitted exponential decay for multiple frames,
-    with the lag values scaled by a factor of 21.75.
+    with the lag values scaled by a factor of 22.
     
     Parameters:
     - df (DataFrame): DataFrame containing 'Correlation Length', 'results', and 'fitted_values' columns.
@@ -170,7 +172,7 @@ def plot_autocorrelation_values_multiple_frames(df):
         lambda_tau = row['Correlation Length']
         results = row['results']
         fitted_values = row['fitted_values']
-        lags = np.arange(len(results)) * 21.75  # Scale the lag values by 21.75
+        lags = np.arange(len(results)) * 22  # Scale the lag values by 22
 
         # Plot autocorrelation values and fitted exponential decay
         plt.plot(lags, results, marker='o', linestyle='-', markersize=5, color=colors[idx], label=f'Frame {idx} Data')
