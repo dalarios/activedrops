@@ -65,12 +65,11 @@ def autocorrelation_movie(file_paths, sint=3, r_values=50, output_dir=None):
             - fitted_values: Values fitted to the exponential decay model
         """
         # Load and preprocess data
-        df = pd.read_csv(file_path, sep=',', skiprows=2)
+        df = pd.read_csv(file_path, sep=',', skiprows=2).fillna(0)
         df['x [um]'] = df['x [m]'] * 1E6
         df['y [um]'] = df['y [m]'] * 1E6
         df['u [um/s]'] = df['u [m/s]'] * 1E6
         df['v [um/s]'] = df['v [m/s]'] * 1E6
-        df = df.fillna(0)
         df = df[['x [um]', 'y [um]', 'u [um/s]', 'v [um/s]']]
         
         # Convert to matrix form for Fourier transformation
