@@ -32,7 +32,7 @@ Purpose:
 # Default RP plotting style
 def set_plotting_style():
     """
-    Formats plotting enviroment to that used in Physical Biology of the Cell,
+    Formats plotting environment to that used in Physical Biology of the Cell,
     2nd edition. To format all plots within a script, simply execute
     `mwc_induction_utils.set_plotting_style() in the preamble.
     """
@@ -118,12 +118,16 @@ def df_piv(file, volume):
     v0 = volume * 1E-9 # µl --> m^3
     µ = 1E-3        # mPa*S
     correlation_length = lambda_tau * 1E-6 # µm --> m
-    df["Power (W)"] = v0 * µ * (df["magnitude [m/s]"].mean() / correlation_length)**2
+
+    # Calculate power using the mean velocity magnitude of non-zero vectors
+    df["Power (W)"] = v0 * µ * (df[df["magnitude [m/s]"] > 0]["magnitude [m/s]"].mean() / correlation_length)**2
     
-    
-    # Calculate mean of top 30% velocity magnitudes
-    n = int(0.3 * len(df))  # Top 30% of the vectors
-    df["mean velocity [um/s]"] = df["magnitude [um/s]"].nlargest(n).mean()
+    # # Calculate mean of top 30% velocity magnitudes
+    # n = int(0.3 * len(df))  # Top 30% of the vectors
+    # df["mean velocity [um/s]"] = df["magnitude [um/s]"].nlargest(n).mean()
+
+    # Calculate the mean of non-zero velocity magnitudes
+    df["mean velocity [um/s]"] = df[df["magnitude [um/s]"] > 0]["magnitude [um/s]"].mean()
 
     # # Calculate drag force
     # df["drag force (pN)"] = 6 * np.pi * µ * lambda_tau * df["magnitude [m/s]"].mean()
@@ -173,11 +177,11 @@ def overlay_heatmap_on_image(image_file, df, heatmap_data, feature, vmin, vmax, 
     image = Image.open(image_file)
 
     # Invert colors for specific features
-    if feature not in ['magnitude [um/s]', 'dcev [1]']:
-        image = ImageOps.invert(image)
+    # if feature not in ['magnitude [um/s]', 'dcev [1]']:
+    #     image = ImageOps.invert(image)
 
     # Choose colormap based on feature
-    cmap = 'inferno' if feature in ['magnitude [um/s]', 'dcev [1]'] else 'RdGy'  # Change 'coolwarm' to your preferred diverging colormap
+    cmap = 'inferno' # if feature in ['magnitude [um/s]', 'dcev [1]'] else 'RdGy'  # Change 'coolwarm' to your preferred diverging colormap
 
 
     # Create a plot to overlay the heatmap on the image
@@ -230,6 +234,14 @@ def piv_heatmap(df, feature, vmin, vmax, time_in_minutes, output_dir=None, image
             plt.show()
 
 
+def sorted_alphanumeric(data):
+    """
+    Helper function to sort data in human-readable alphanumeric order.
+    """
+    convert = lambda text: int(text) if text.isdigit() else text.lower()
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+    return sorted(data, key=alphanum_key)
+
 
 
 def generate_heatmaps(dataframes, feature, output_dir_base=None, vmin=None, vmax=None, seconds_per_frame=3, image_path=None):
@@ -273,8 +285,7 @@ def generate_heatmaps(dataframes, feature, output_dir_base=None, vmin=None, vmax
 
 
 
-
-def piv_time_series(dataframes, time_interval_seconds=3):
+def piv_time_series(dataframes, time_interval_seconds=3, output_dir=None):
     """
     Constructs a time series DataFrame from a list of PIV dataframes.
 
@@ -284,6 +295,7 @@ def piv_time_series(dataframes, time_interval_seconds=3):
     Args:
     - dataframes (list of DataFrame): A list of dataframes, each representing PIV data at a different time point.
     - time_interval_min (float, optional): Time interval between each frame in minutes. Defaults to 0.05.
+    - output_dir (str, optional): Directory to save the time series dataframe. If None, the dataframe is not saved.
 
     Returns:
     - DataFrame: A dataframe with time series data including file name, power, and mean velocity.
@@ -312,7 +324,12 @@ def piv_time_series(dataframes, time_interval_seconds=3):
     df_ts['distance (um)'] = (df_ts['mean velocity [um/s]'] * df_ts['time (min)'].diff()).cumsum()
     df_ts['Work (J)'] = (df_ts['Power (W)'] * df_ts['time (min)'].diff()).cumsum()
 
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        df_ts.to_csv(os.path.join(output_dir, 'time_series.csv'), index=False)
+
     return df_ts
+
 
 
 def plot_time_series(df_ts, feature, sigma=0, output_dir=None):
@@ -359,6 +376,19 @@ def plot_time_series(df_ts, feature, sigma=0, output_dir=None):
     else:
         plt.show()
 
+
+def combine_timeseries_dataframes(base_data_dir, conditions, subconditions):
+    combined_df = pd.DataFrame()
+
+    for condition in conditions:
+        for subcondition in subconditions:
+            file_path = os.path.join(base_data_dir, condition, subcondition, 'plots', 'time_series.csv')
+            if os.path.exists(file_path):
+                df = pd.read_csv(file_path)
+                df['Condition'] = f'{condition} {subcondition}'
+                combined_df = pd.concat([combined_df, df], ignore_index=True)
+
+    return combined_df
 
 
 def plot_combined_time_series(combined_df, feature, sigma=0, output_dir=None):
@@ -409,84 +439,20 @@ def plot_combined_time_series(combined_df, feature, sigma=0, output_dir=None):
         plt.show()
 
 
-#####################
-
-def sorted_alphanumeric(data):
-    """
-    Helper function to sort data in human-readable alphanumeric order.
-    """
-    convert = lambda text: int(text) if text.isdigit() else text.lower()
-    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
-    return sorted(data, key=alphanum_key)
 
 
-def make_movies_from_features(base_directory, fps):
-    # Find all subdirectories in the base directory
-    subdirectories = [d for d in os.listdir(base_directory) if os.path.isdir(os.path.join(base_directory, d))]
-
-    for feature in subdirectories:
-        feature_directory = os.path.join(base_directory, feature)
-        output_filename = os.path.join(base_directory, f"{feature}.avi")
-
-        # Get all the .jpg files from the feature directory
-        images = [img for img in os.listdir(feature_directory) if img.endswith(".jpg")]
-
-        # Skip if no images are found
-        if not images:
-            print(f"No images found in {feature_directory}, skipping movie creation.")
-            continue
-
-        # Sort the images in alphanumeric order
-        images = sorted_alphanumeric(images)
-
-        # Read the first image to get the width and height
-        frame = cv2.imread(os.path.join(feature_directory, images[0]))
-        height, width, layers = frame.shape
-
-        # Define the codec and create VideoWriter object
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        out = cv2.VideoWriter(output_filename, fourcc, fps, (width, height))
-
-        # Loop through all the images and add them to the video
-        for image in images:
-            frame = cv2.imread(os.path.join(feature_directory, image))
-            out.write(frame)
-
-        # Release everything when the job is finished
-        out.release()
-
-def save_dataframes(dataframes, output_dir, prefix='df'):
-    """Saves a list of DataFrames to the specified directory."""
-    dataframes_dir = os.path.join(output_dir, 'dataframes')
-    os.makedirs(dataframes_dir, exist_ok=True)
-
-    for i, df in enumerate(dataframes):
-        df_path = os.path.join(dataframes_dir, f'{prefix}_{i}.csv')
-        df.to_csv(df_path, index=False)
-
-def load_dataframes(output_dir, prefix='df'):
-    """Loads DataFrames from the specified directory."""
-    dataframes_dir = os.path.join(output_dir, 'dataframes')
-    if not os.path.exists(dataframes_dir):
-        return None
-
-    df_files = sorted(glob.glob(os.path.join(dataframes_dir, f'{prefix}_*.csv')))
-    if not df_files:
-        return None
-
-    return [pd.read_csv(df_file) for df_file in df_files]
 
 def convert_images(input_dir, output_dir, max_frame=None, brightness_factor=1, contrast_factor=1):
     """Converts and adjusts images from input_dir and saves them in output_dir."""
     os.makedirs(output_dir, exist_ok=True)
-    input_files = sorted_alphanumeric(glob.glob(os.path.join(input_dir, '*.jpg')))
+    input_files = natsorted(glob.glob(os.path.join(input_dir, '*.jpg')))
 
     if max_frame is None:
         input_files = input_files[:len(input_files)]
     else:
         input_files = input_files[:max_frame]
 
-    output_files = sorted_alphanumeric(glob.glob(os.path.join(output_dir, '*.tif')))
+    output_files = natsorted(glob.glob(os.path.join(output_dir, '*.tif')))
 
     if len(input_files) == len(output_files):
         print(f"Conversion already completed for {output_dir}. Skipping...")
@@ -511,86 +477,67 @@ def convert_images(input_dir, output_dir, max_frame=None, brightness_factor=1, c
         processed_image_path = os.path.join(output_dir, base_file_name)
         image_contrasted.save(processed_image_path, format='TIFF', compression='tiff_lzw')
 
-def combine_timeseries_dataframes(base_data_dir, conditions, subconditions):
-    combined_df = pd.DataFrame()
 
+def create_heatmap_movies(data_path, condition, subcondition, feature_limits, frame_rate=120):
+    plots_dir = f"{data_path}{condition}/{subcondition}/plots/"
+    for feature in feature_limits.keys():
+        feature_name_for_file = re.sub(r"\s*\[.*?\]\s*", "", feature).replace(" ", "_").lower()
+        heatmap_dir = f"{data_path}{condition}/{subcondition}/plots/{feature_name_for_file}/"
+        heatmap_files = natsorted(glob.glob(f"{heatmap_dir}heatmap_*.jpg"))
+
+        if not heatmap_files:
+            continue
+
+        # Get the resolution of the first image (assuming all images are the same size)
+        first_image = cv2.imread(heatmap_files[0])
+        video_resolution = (first_image.shape[1], first_image.shape[0])  # Width x Height
+
+        # Define the codec and create VideoWriter object
+        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+        out = cv2.VideoWriter(f'{plots_dir}{feature_name_for_file}.avi', fourcc, frame_rate, video_resolution)
+
+        for file in heatmap_files:
+            img = cv2.imread(file)
+            out.write(img)  # Write the image as is, without resizing
+
+        out.release()
+
+
+
+def process_piv_data(data_path, max_frame, conditions, subconditions, time_interval_seconds=3, feature_limits=None, frame_rate=120):
     for condition in conditions:
         for subcondition in subconditions:
-            file_path = os.path.join(base_data_dir, condition, subcondition, 'plots', 'dataframes', 'timeseries_df_0.csv')
-            if os.path.exists(file_path):
-                df = pd.read_csv(file_path)
-                df['Condition'] = f'{condition} {subcondition}'
-                combined_df = pd.concat([combined_df, df], ignore_index=True)
+            # Construct the file path pattern for PIV files
+            piv_files_pattern = f"{data_path}{condition}/{subcondition}/piv_data/PIVlab_****.txt"
+            dfs = process_piv_files(piv_files_pattern, 2, max_frame=max_frame)
 
-    return combined_df
+            # Construct directories for image conversion
+            input_dir = f"{data_path}{condition}/{subcondition}/piv_movie/"
+            output_dir = f"{data_path}{condition}/{subcondition}/piv_movie_converted/"
+            convert_images(input_dir, output_dir, max_frame=max_frame)
 
+            # Process heatmaps for each feature
+            image_files_pattern = f"{data_path}{condition}/{subcondition}/piv_movie_converted/converted_image_***.tif"
+            image_files = sorted(glob.glob(image_files_pattern))
 
-def process_piv_workflow(
-        conditions, 
-        subconditions, 
-        base_data_dir, 
-        feature_limits, 
-        time_interval, 
-        max_frame=None, 
-        volume_ul=2, 
-        brightness_factor=0.8, 
-        contrast_factor=0.8
-        ):
-    """
-    Main workflow to process PIV data.
-    
-    Args:
-    - conditions (list of str): List of conditions.
-    - subconditions (list of str): List of subconditions.
-    - base_data_dir (str): Base directory for the data.
-    - time_intervals (list of int): List of time intervals in seconds, corresponding to each condition.
-    - max_frame (int, optional): Maximum number of frames to process.
-    - volume_ul (int): Volume in microliters.
-    - brightness_factor (float): Factor for brightness adjustment.
-    - contrast_factor (float): Factor for contrast adjustment.
-    """
+            for i, df in enumerate(dfs):
+                for feature, limits in feature_limits.items():
+                    vmin, vmax = limits
+                    # Remove text in brackets from feature names for file naming
+                    feature_name_for_file = re.sub(r"\s*\[.*?\]\s*", "", feature).replace(" ", "_").lower()
+                    heatmap_output = f"{data_path}{condition}/{subcondition}/plots/{feature_name_for_file}/heatmap_{i}.jpg"
+                    piv_heatmap(df, feature, vmin=vmin, vmax=vmax, time_in_minutes=i * time_interval_seconds/60, image_file=image_files[i], output_dir=heatmap_output)
 
-    
-    for i, condition in enumerate(conditions):
-        for subcondition in subconditions:
-            # Define directories
-            input_image_dir = os.path.join(base_data_dir, condition, subcondition, "piv_movie")
-            output_image_dir = os.path.join(base_data_dir, condition, subcondition, "piv_movie_8bit_2048x2048")
-            output_dir = os.path.join(base_data_dir, condition, subcondition, "plots")
+            # Process time series
+            time_series_output = f"{data_path}{condition}/{subcondition}/plots/"
+            piv_time_series(dfs, time_interval_seconds=time_interval_seconds, output_dir=time_series_output)
 
-            # Convert images if not already done
-            convert_images(input_image_dir, output_image_dir, max_frame, brightness_factor, contrast_factor)
-
-            # Process PIV files
-            input_dir = os.path.join(base_data_dir, condition, subcondition, "piv_data", "PIVlab_****.txt")
-
-            if max_frame is None:
-                max_frame = len(os.listdir(output_image_dir))
-
-            # Process PIV files if not already done
-            if not os.path.exists(os.path.join(output_dir, 'dataframes')):
-                dataframes = process_piv_files(input_dir, volume=volume_ul, max_frame=max_frame)
-                save_dataframes(dataframes, output_dir)
-
-            # Load all dataframes
-            dataframes_dir = os.path.join(output_dir, 'dataframes')
-            dataframe_files = os.listdir(dataframes_dir)
-            dataframes = [pd.read_csv(os.path.join(dataframes_dir, f)) for f in dataframe_files[:max_frame]]
-
-            # Process time series data if not already done
-            timeseries_df_path = os.path.join(output_dir, 'dataframes', 'timeseries_df_0.csv')
-            
-            # Process time series data with the specific time interval
-            if not os.path.exists(timeseries_df_path):
-                df = piv_time_series(dataframes, time_interval_seconds=time_interval)
-                save_dataframes([df], output_dir, prefix='timeseries_df')
-            else:
-                df = pd.read_csv(timeseries_df_path)
-
-            # Generate heatmaps for each feature
-            for feature, (vmin, vmax) in feature_limits.items():
-                generate_heatmaps(dataframes, feature, vmin=vmin, vmax=vmax, output_dir_base=output_dir, image_path=output_image_dir)
+            # Create heatmap movies
+            create_heatmap_movies(data_path, condition, subcondition, feature_limits, frame_rate=frame_rate)
 
 
-            # Make movies
-            make_movies_from_features(output_dir, fps=120)
+def plot_combined_timeseries(conditions, subconditions, data_path):
+    df = combine_timeseries_dataframes(data_path, conditions, subconditions)
+
+    for feature in ['velocity', 'power', 'distance', 'work']:
+        plot_combined_time_series(df, feature, sigma=1, output_dir=data_path)
