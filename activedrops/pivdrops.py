@@ -511,7 +511,7 @@ def calculate_mean_over_time(data_path, condition, subcondition, seconds_interva
 
 
 
-def process_piv_data(data_path, condition, subcondition, max_frame, feature_limits, volume=2, frame_rate=120):
+def process_piv_data(data_path, condition, subcondition, max_frame, feature_limits, volume=2, frame_rate=120, save_csv=True, heatmaps=True):
     """
     Processes PIV data, converts images, generates heatmaps for features, and creates heatmap movies.
 
@@ -521,25 +521,28 @@ def process_piv_data(data_path, condition, subcondition, max_frame, feature_limi
     - subcondition (str): Specific subcondition defining a sub-subdirectory within the condition directory.
     - max_frame (int): Maximum number of frames/files to process.
     - feature_limits (dict): Dictionary specifying the limits for each feature.
-     - volume (float, optional): Droplet volume in microliters µl. Defaults to 2.
+    - volume (float, optional): Droplet volume in microliters µl. Defaults to 2.
     - frame_rate (int, optional): Frame rate for the output video. Defaults to 120.
+    - save_csv (bool, optional): Whether to save the processed PIV files as CSV. Defaults to True.
     """
 
-    # Process and save PIV files
-    process_and_save_piv_files(data_path, condition, subcondition, max_frame=max_frame, volume=volume, save_csv=True)
+    if save_csv:
+        # Process and save PIV files but avoid re-processing if already completed
+        process_and_save_piv_files(data_path, condition, subcondition, max_frame=max_frame, volume=volume, save_csv=True)
 
     # Load all CSV files into a list of dataframes
     saved_processed_dfs = f"{data_path}{condition}/{subcondition}/dataframes_PIV/PIV_dataframe_*.csv"
     dfs = [pd.read_csv(file) for file in sorted(glob.glob(saved_processed_dfs))]
 
-    # Convert images
-    convert_images(data_path, condition, subcondition, max_frame=max_frame)
+    if heatmaps:
+        # Convert images
+        convert_images(data_path, condition, subcondition, max_frame=max_frame)
 
-    # Generate heatmaps for features
-    generate_heatmaps_for_features(data_path, condition, subcondition, feature_limits, dfs)
+        # Generate heatmaps for features
+        generate_heatmaps_for_features(data_path, condition, subcondition, feature_limits, dfs)
 
-    # Create heatmap movies
-    create_heatmap_movies(data_path, condition, subcondition, feature_limits, max_frame=max_frame, frame_rate=frame_rate)
+        # Create heatmap movies
+        create_heatmap_movies(data_path, condition, subcondition, feature_limits, max_frame=max_frame, frame_rate=frame_rate)
 
     return dfs
 
