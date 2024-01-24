@@ -263,7 +263,7 @@ def process_piv_data(data_path, condition, subcondition, min_frame=0, max_frame=
     pivot_data_frame = pd.DataFrame(pivot_matrices)
 
     # Adjusting column names in mean_data_frame
-    mean_data_frame.columns = [f"<{column}>" if column != "frame" else column for column in mean_data_frame.columns]
+    mean_data_frame.columns = [f"{column}_mean" if column != "frame" else column for column in mean_data_frame.columns]
     
     # Adding time column to pivot_data_frame
     pivot_data_frame["frame"] = mean_data_frame["frame"].values
@@ -299,8 +299,8 @@ def convert_images(data_path, condition, subcondition, max_frame=None, brightnes
     """
 
     # Construct input and output directories based on provided path, condition, and subcondition
-    input_dir = f"{data_path}{condition}/{subcondition}/piv_movie/"
-    output_dir = f"{data_path}{condition}/{subcondition}/piv_movie_converted/"
+    input_dir = f"{data_path}/{condition}/{subcondition}/piv_movie/"
+    output_dir = f"{data_path}/{condition}/{subcondition}/piv_movie_converted/"
 
     # Create the output directory if it does not exist
     os.makedirs(output_dir, exist_ok=True)
@@ -371,7 +371,7 @@ def piv_heatmap(df, data_path, condition, subcondition, feature_limits, time_int
             vals = df.iloc[j, df.columns.get_loc(feature)]
 
             output_directory_heatmaps = os.path.join(data_path, condition, subcondition, "heatmaps_PIV", f"{feature.split()[0]}", f"{feature.split()[0]}_heatmap_{j}.jpg")
-            image_files_pattern = f"{data_path}{condition}/{subcondition}/piv_movie_converted/converted_image_****.tif"
+            image_files_pattern = f"{data_path}/{condition}/{subcondition}/piv_movie_converted/converted_image_****.tif"
             image_files = sorted(glob.glob(image_files_pattern))[j]
             image = Image.open(image_files)
 
@@ -406,7 +406,7 @@ def create_heatmap_movies(data_path, condition, subcondition, feature_limits, fr
     The function reads heatmap images from the specified directory and creates a video file for each feature.
     """
 
-    plots_dir = f"{data_path}{condition}/{subcondition}/heatmaps_PIV/"
+    plots_dir = f"{data_path}/{condition}/{subcondition}/heatmaps_PIV/"
     for feature in feature_limits.keys():
         feature_name_for_file = feature.split()[0]
         heatmap_dir = os.path.join(data_path, condition, subcondition, "heatmaps_PIV", f"{feature.split()[0]}", f"{feature.split()[0]}_heatmap_****.jpg")
@@ -433,7 +433,7 @@ def create_heatmap_movies(data_path, condition, subcondition, feature_limits, fr
         out.release()
 
 
-def plot_features(dfs, data_paths, conditions, subconditions, time_interval=3, sigma=2):
+def plot_features(dfs, data_paths, conditions, subconditions, time_intervals, sigma=2):
     """
     Plots each feature with respect to frame for multiple DataFrames.
 
@@ -442,7 +442,8 @@ def plot_features(dfs, data_paths, conditions, subconditions, time_interval=3, s
     - data_paths (list of str): List of base paths for saving the plots, corresponding to each DataFrame.
     - conditions (list of str): List of condition names corresponding to each DataFrame.
     - subconditions (list of str): List of subcondition names corresponding to each DataFrame.
-    - time_interval (int, optional): Time interval between frames, used for x-axis scaling. Default is 3.
+    - time_intervals (list of int): List of time intervals between frames, used for x-axis scaling, corresponding to each DataFrame.
+    - sigma (int, optional): Standard deviation for Gaussian filter applied to the data. Default is 2.
 
     The function creates a plot for each feature in the DataFrame(s), combining data from all provided
     DataFrames. Plots are saved as JPEG images in the specified data_paths.
@@ -451,7 +452,7 @@ def plot_features(dfs, data_paths, conditions, subconditions, time_interval=3, s
     for feature in dfs[0].columns[:-1]:
         plt.figure(figsize=(10, 6))
 
-        for df, data_path, condition, subcondition in zip(dfs, data_paths, conditions, subconditions):
+        for df, data_path, condition, subcondition, time_interval in zip(dfs, data_paths, conditions, subconditions, time_intervals):
             output_directory_plots = os.path.join(data_path, condition, subcondition, "plots_PIV", f"{feature.split()[0]}_plot.jpg")
             os.makedirs(os.path.dirname(output_directory_plots), exist_ok=True)
             filtered_values = gaussian_filter(df[feature], sigma=sigma)
