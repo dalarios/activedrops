@@ -433,39 +433,6 @@ def create_heatmap_movies(data_path, condition, subcondition, feature_limits, fr
         out.release()
 
 
-def plot_features(dfs, data_paths, conditions, subconditions, time_intervals, sigma=2):
-    """
-    Plots each feature with respect to frame for multiple DataFrames.
-
-    Parameters:
-    - dfs (list of DataFrame): List of DataFrames to plot.
-    - data_paths (list of str): List of base paths for saving the plots, corresponding to each DataFrame.
-    - conditions (list of str): List of condition names corresponding to each DataFrame.
-    - subconditions (list of str): List of subcondition names corresponding to each DataFrame.
-    - time_intervals (list of int): List of time intervals between frames, used for x-axis scaling, corresponding to each DataFrame.
-    - sigma (int, optional): Standard deviation for Gaussian filter applied to the data. Default is 2.
-
-    The function creates a plot for each feature in the DataFrame(s), combining data from all provided
-    DataFrames. Plots are saved as JPEG images in the specified data_paths.
-    """
-
-    for feature in dfs[0].columns[:-1]:
-        plt.figure(figsize=(10, 6))
-
-        for df, data_path, condition, subcondition, time_interval in zip(dfs, data_paths, conditions, subconditions, time_intervals):
-            output_directory_plots = os.path.join(data_path, condition, subcondition, "plots_PIV", f"{feature.split()[0]}_plot.jpg")
-            os.makedirs(os.path.dirname(output_directory_plots), exist_ok=True)
-            filtered_values = gaussian_filter(df[feature], sigma=sigma)
-            plt.plot(df["frame"] * (time_interval/60), filtered_values, marker='o', linestyle='-', markersize=1, linewidth=1, label=f'{condition}_{subcondition}')
-
-        plt.xlabel('Time (minutes)')
-        plt.ylabel(feature)
-        plt.title(f"PIV - {feature}")
-        plt.grid(True, which='both', linestyle='--', linewidth=0.5)
-        plt.legend()
-        plt.savefig(output_directory_plots, format='jpg', dpi=250)
-        plt.close()
-
 
 
 def plot_pca(dfs, data_paths, conditions, subconditions, features):
@@ -504,6 +471,51 @@ def plot_pca(dfs, data_paths, conditions, subconditions, features):
     os.makedirs(os.path.dirname(output_dir_pca), exist_ok=True)
     plt.savefig(output_dir_pca, format='jpg', dpi=250)
     plt.close()
+
+
+
+
+
+def plot_features(data_paths, conditions, subconditions, features, time_intervals, sigma=2):
+    """
+    Plots each feature with respect to frame for multiple DataFrames.
+
+    Parameters:
+    - dfs (list of DataFrame): List of DataFrames to plot.
+    - data_paths (list of str): List of base paths for saving the plots, corresponding to each DataFrame.
+    - conditions (list of str): List of condition names corresponding to each DataFrame.
+    - subconditions (list of str): List of subcondition names corresponding to each DataFrame.
+    - time_intervals (list of int): List of time intervals between frames, used for x-axis scaling, corresponding to each DataFrame.
+    - sigma (int, optional): Standard deviation for Gaussian filter applied to the data. Default is 2.
+
+    The function creates a plot for each feature in the DataFrame(s), combining data from all provided
+    DataFrames. Plots are saved as JPEG images in the specified data_paths.
+    """
+    
+    # load dataframes
+    dfs = [pd.read_csv(os.path.join(data_path, condition, subcondition, "dataframes_PIV", "mean_values.csv")) for data_path, condition, subcondition in zip(data_paths, conditions, subconditions)]
+
+    # generate PCA
+    plot_pca(dfs, data_paths, conditions, subconditions, features)
+
+    # plot each feature
+    for feature in dfs[0].columns[:-1]:
+        plt.figure(figsize=(10, 6))
+
+        for df, data_path, condition, subcondition, time_interval in zip(dfs, data_paths, conditions, subconditions, time_intervals):
+            output_directory_plots = os.path.join(data_path, condition, subcondition, "plots_PIV", f"{feature.split()[0]}_plot.jpg")
+            os.makedirs(os.path.dirname(output_directory_plots), exist_ok=True)
+            filtered_values = gaussian_filter(df[feature], sigma=sigma)
+            plt.plot(df["frame"] * (time_interval/60), filtered_values, marker='o', linestyle='-', markersize=1, linewidth=1, label=f'{condition}_{subcondition}')
+
+        plt.xlabel('Time (minutes)')
+        plt.ylabel(feature)
+        plt.title(f"PIV - {feature}")
+        plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+        plt.legend()
+        plt.savefig(output_directory_plots, format='jpg', dpi=250)
+        plt.close()
+
 
 
 
