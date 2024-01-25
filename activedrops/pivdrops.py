@@ -456,7 +456,7 @@ def plot_features(dfs, data_paths, conditions, subconditions, time_intervals, si
             output_directory_plots = os.path.join(data_path, condition, subcondition, "plots_PIV", f"{feature.split()[0]}_plot.jpg")
             os.makedirs(os.path.dirname(output_directory_plots), exist_ok=True)
             filtered_values = gaussian_filter(df[feature], sigma=sigma)
-            plt.plot(df["frame"] * (time_interval/60), filtered_values, marker='o', linestyle='-', markersize=2, linewidth=2, label=f'{condition}_{subcondition}')
+            plt.plot(df["frame"] * (time_interval/60), filtered_values, marker='o', linestyle='-', markersize=1, linewidth=1, label=f'{condition}_{subcondition}')
 
         plt.xlabel('Time (minutes)')
         plt.ylabel(feature)
