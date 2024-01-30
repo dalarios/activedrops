@@ -128,6 +128,9 @@ def correlation_length(df, plot_autocorrelation=True):
     # Calculate intervector distance
     intervector_distance_microns = ((df["y [m]"].max() - df["y [m]"].min()) / v.shape[0])
 
+    # Subtract the mean from the velocity field
+    v = v - np.mean(v)
+
     # Calculate the autocorrelation function with Fourier transform
     full_product = np.fft.fft2(v) * np.conj(np.fft.fft2(v))
     inverse = np.real(np.fft.ifft2(full_product))  # Real part of the inverse Fourier transform
@@ -153,6 +156,7 @@ def correlation_length(df, plot_autocorrelation=True):
 
     # Compute correlation length and other parameters
     lambda_tau = -B * np.log((0.3 - C) / A) * intervector_distance_microns 
+    
 
     if plot_autocorrelation:
         # Plot and save autocorrelation values
@@ -236,7 +240,7 @@ def process_piv_data(data_path, condition, subcondition, min_frame=0, max_frame=
     mean_data_frame.rename(columns={'index': 'frame'}, inplace=True)
 
     # Calculate power and add to DataFrame
-    volume = 2E-9  # µl --> m^3
+    volume = 2.5E-9  # µl --> m^3
     viscosity = 1E-3  # mPa*S
     mean_data_frame["power [W]"] = volume * viscosity * (mean_data_frame["velocity magnitude [m/s]"]/mean_data_frame["correlation length [m]"])**2
 
@@ -377,7 +381,7 @@ def piv_heatmap(df, data_path, condition, subcondition, feature_limits, time_int
 
             plt.figure(figsize=(10, 6))
             plt.imshow(image, cmap=None, extent=[-2762/2, 2762/2, -2762/2, 2762/2]) # piv image
-            im = plt.imshow(vals, cmap='inferno', origin='lower', alpha=0.7, extent=[-2762/2, 2762/2, -2762/2, 2762/2], vmin=vmin, vmax=vmax) # heatmap
+            im = plt.imshow(vals, cmap='inferno', origin='upper', alpha=0.7, extent=[-2762/2, 2762/2, -2762/2, 2762/2], vmin=vmin, vmax=vmax) # heatmap
             plt.xlabel('x [um]')
             plt.ylabel('y [um]')
             cbar = plt.colorbar(im)
@@ -450,12 +454,12 @@ def plot_pca(dfs, data_paths, conditions, subconditions, features):
 
         # Scaling alpha to increase with respect to the frame index
         num_points = principalDf.shape[0]
-        alphas = np.linspace(0.01, 1, num_points)  # Alpha values linearly spaced from 1 to 0.01
-
+        alphas = np.linspace(0.001, 1, num_points)  # Alpha values linearly spaced from 1 to 0.01
+        
         # Plotting each line segment with increasing alpha
         for i in range(1, num_points):
             plt.plot(principalDf['principal component 1'][i-1:i+1], principalDf['principal component 2'][i-1:i+1], 
-                     alpha=alphas[i], linestyle='-', linewidth=1, color=colors[group_index])
+                     alpha=alphas[i], linestyle='-', linewidth=2, color=colors[group_index])
 
         # Plotting the points
         plt.scatter(principalDf['principal component 1'], principalDf['principal component 2'], 
@@ -476,7 +480,7 @@ def plot_pca(dfs, data_paths, conditions, subconditions, features):
 
 
 
-def plot_features(data_paths, conditions, subconditions, features, time_intervals, sigma=2):
+def plot_features(data_paths, conditions, subconditions, features, time_intervals, sigma=2, min_frame=None, max_frame=None):
     """
     Plots each feature with respect to frame for multiple DataFrames.
 
@@ -493,7 +497,28 @@ def plot_features(data_paths, conditions, subconditions, features, time_interval
     """
     
     # load dataframes
-    dfs = [pd.read_csv(os.path.join(data_path, condition, subcondition, "dataframes_PIV", "mean_values.csv")) for data_path, condition, subcondition in zip(data_paths, conditions, subconditions)]
+    dfs = []  # Initialize an empty list
+
+    for data_path, condition, subcondition, time_interval in zip(data_paths, conditions, subconditions, time_intervals):
+        # Construct the file path
+        file_path = os.path.join(data_path, condition, subcondition, "dataframes_PIV", "mean_values.csv")
+        # Read the CSV file and append the DataFrame to the list
+        df = pd.read_csv(file_path)
+
+        # replace "frame" with the proper time
+        df = df.rename(columns={"frame":"time [min]"})
+        df["time [min]"] = df["time [min]"] * time_interval / 60
+
+        # add Work (Joules) and CL & velocity in microns
+        df = df.rename(columns={"data type [-]_mean" : "work [J]", "correlation length [m]_mean" : "correlation length [um]", "velocity magnitude [m/s]_mean" : "velocity magnitude [um/s]"})
+        df["work [J]"] = df["power [W]_mean"].cumsum()
+        df["correlation length [um]" ] = df["correlation length [um]"] * 1e6
+        df["velocity magnitude [um/s]"] = df["velocity magnitude [um/s]"] * 1e6
+
+        # min and max frames
+        df = df.iloc[min_frame:max_frame,:]
+
+        dfs.append(df)
 
     # generate PCA
     plot_pca(dfs, data_paths, conditions, subconditions, features)
@@ -506,14 +531,14 @@ def plot_features(data_paths, conditions, subconditions, features, time_interval
             output_directory_plots = os.path.join(data_path, condition, subcondition, "plots_PIV", f"{feature.split()[0]}_plot.jpg")
             os.makedirs(os.path.dirname(output_directory_plots), exist_ok=True)
             filtered_values = gaussian_filter(df[feature], sigma=sigma)
-            plt.plot(df["frame"] * (time_interval/60), filtered_values, marker='o', linestyle='-', markersize=1, linewidth=1, label=f'{condition}_{subcondition}')
+            plt.plot(df["time [min]"] , filtered_values, marker='o', linestyle='-', markersize=1, linewidth=1, label=f'{condition}_{subcondition}')
 
         plt.xlabel('Time (minutes)')
         plt.ylabel(feature)
         plt.title(f"PIV - {feature}")
         plt.grid(True, which='both', linestyle='--', linewidth=0.5)
         plt.legend()
-        plt.savefig(output_directory_plots, format='jpg', dpi=250)
+        plt.savefig(output_directory_plots, format='jpg', dpi=400)
         plt.close()
 
 
