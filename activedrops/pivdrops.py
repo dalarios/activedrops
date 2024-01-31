@@ -125,11 +125,11 @@ def correlation_length(df, plot_autocorrelation=True):
     # Obtain square grid of velocity magnitudes
     v = df.pivot(index='y [m]', columns='x [m]', values="velocity magnitude [m/s]").values
 
+    # subtract mean from each vector
+    v = v - np.mean(v)
+
     # Calculate intervector distance
     intervector_distance_microns = ((df["y [m]"].max() - df["y [m]"].min()) / v.shape[0])
-
-    # Subtract the mean from the velocity field
-    v = v - np.mean(v)
 
     # Calculate the autocorrelation function with Fourier transform
     full_product = np.fft.fft2(v) * np.conj(np.fft.fft2(v))
@@ -156,7 +156,6 @@ def correlation_length(df, plot_autocorrelation=True):
 
     # Compute correlation length and other parameters
     lambda_tau = -B * np.log((0.3 - C) / A) * intervector_distance_microns 
-    
 
     if plot_autocorrelation:
         # Plot and save autocorrelation values
@@ -252,6 +251,9 @@ def process_piv_data(data_path, condition, subcondition, min_frame=0, max_frame=
 
     # Scale time appropriately
     mean_data_frame["frame"] = np.arange(len(mean_data_frame)) 
+
+    # apply Gaussian filter to mean_data_frame
+    mean_data_frame.iloc[:, 1:] = mean_data_frame.iloc[:, 1:].apply(lambda x: gaussian_filter(x, sigma=2))
 
 
 
@@ -530,8 +532,8 @@ def plot_features(data_paths, conditions, subconditions, features, time_interval
         for df, data_path, condition, subcondition, time_interval in zip(dfs, data_paths, conditions, subconditions, time_intervals):
             output_directory_plots = os.path.join(data_path, condition, subcondition, "plots_PIV", f"{feature.split()[0]}_plot.jpg")
             os.makedirs(os.path.dirname(output_directory_plots), exist_ok=True)
-            filtered_values = gaussian_filter(df[feature], sigma=sigma)
-            plt.plot(df["time [min]"] , filtered_values, marker='o', linestyle='-', markersize=1, linewidth=1, label=f'{condition}_{subcondition}')
+            # filtered_values = gaussian_filter(df[feature], sigma=sigma)
+            plt.plot(df["time [min]"] , df[feature], marker='o', linestyle='-', markersize=1, linewidth=1, label=f'{condition}_{subcondition}')
 
         plt.xlabel('Time (minutes)')
         plt.ylabel(feature)
