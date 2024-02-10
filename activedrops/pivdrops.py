@@ -66,7 +66,7 @@ def set_plotting_style():
     plt.rc('legend', title_fontsize='8', frameon=True, 
            facecolor='#E3DCD0', framealpha=1)
     sns.set_style('darkgrid', rc=rc)
-    sns.set_palette("colorblind", color_codes=True)
+    sns.set_palette("viridis", color_codes=True)
     sns.set_context('notebook', rc=rc)
 
 
@@ -245,10 +245,10 @@ def process_piv_data(data_path, condition, subcondition, min_frame=0, max_frame=
     mean_df_output_path = os.path.join(output_directory_dfs, "mean_values.csv")
     mean_data_frame.to_csv(mean_df_output_path, index=False)
 
-    pivot_df_output_path = os.path.join(output_directory_dfs, "features_matrices.csv", quoting=csv.QUOTE_NONE)
+    pivot_df_output_path = os.path.join(output_directory_dfs, "features_matrices.csv")
     pivot_data_frame.to_csv(pivot_df_output_path, index=False)
 
-    return pivot_data_frame
+    return mean_data_frame, pivot_data_frame
 
 
 
