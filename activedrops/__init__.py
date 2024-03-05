@@ -3,7 +3,7 @@
 """Top level package for ActiveDROPS project"""
 
 from . import viz
-from . import pivdrops
+from . import pivdrops2
 from . import autocorrelation
 
 

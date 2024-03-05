@@ -1,13 +1,15 @@
 # Import plotting utilities
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns  # make plots prettier
-import os
-import matplotlib.gridspec as gridspec
+import cv2
 import glob
-from scipy.ndimage import gaussian_filter
-import colorcet as cc
+import os
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from PIL import Image, ImageDraw, ImageEnhance
+import imageio.v2 as imageio
+import seaborn as sns
+from natsort import natsorted
+from scipy.ndimage import gaussian_filter1d
 
 """
 Title:
@@ -52,376 +54,200 @@ def set_plotting_style():
     sns.set_context('notebook', rc=rc)
 
 
-
-
-
-def velocity(dfs, labels, filename=None, max_frame=None, x_limits=None, y_limits=None, logy=False, figsize=(10, 6)):
+def plot_mean_fluorescence_over_time(data_path, conditions, subconditions, channel, time_interval=3, min_frame=0, max_frame=None, skip_frames=1, log_scale=False):
     """
-    dfs : list of pd.DataFrame
-        A list of DataFrames each containing at least the columns 'time_min' and 'v (m/s)'.
-    labels : list of str
-        A list of string labels for the plots. Should be the same length as dfs.
-    filename : str, optional
-        The name of the file where the plot will be saved. If None, the plot will be shown using plt.show().
-    max_frame : int, optional
-        The maximum frame (row number) to plot.
-    x_limits : tuple of (float, float), optional
-        The limits for the x-axis.
-    y_limits : tuple of (float, float), optional
-        The limits for the y-axis.
+    Computes and plots the mean fluorescence intensity over time for a given set of images across multiple conditions and subconditions,
+    with visual grouping by condition and improved legend. Time is displayed in hours. The final plot, including all curves, is saved as a JPG file.
+
+    Parameters:
+    - data_path (str): Base path where the images are stored.
+    - conditions (list of str): List of condition names.
+    - subconditions (list of str): List of subcondition names.
+    - channel (str): Channel name.
+    - time_interval (int): Time interval between frames in minutes.
+    - min_frame (int): Minimum frame number to process.
+    - max_frame (int): Maximum frame number to process.
+    - skip_frames (int): Number of frames to skip between plotted points.
+    - log_scale (bool): Whether to plot the y-axis in log scale.
     """
-    if len(dfs) != len(labels):
-        raise ValueError("Number of dataframes and labels must be the same")
-    
-    fig, ax = plt.subplots(figsize=figsize)
-    
-    for df, label in zip(dfs, labels):
-        df = df.iloc[:max_frame,:]
+    plt.figure(figsize=(12, 8))
+
+    # Use a colormap to generate distinct colors for each condition
+    cmap = plt.get_cmap('inferno')
+    condition_colors = cmap(np.linspace(0, 1, len(conditions) + 1)[:-1])
+
+    # Generate shades for subconditions within each condition
+    for condition_idx, condition in enumerate(conditions):
+        base_color = condition_colors[condition_idx]
         
-        # Choose a color
-        color = next(plt.gca()._get_lines.prop_cycler)['color']
+        for sub_idx, subcondition in enumerate(subconditions):
+            directory_path = os.path.join(data_path, condition, subcondition, "original")
+            
+            # files can be either img_00000****_cy5-4x_000 or img_00000****_gfp-4x_000.tif so load the appropriate channel
+            if channel == "cy5":
+                image_files = sorted(glob.glob(os.path.join(directory_path, "*cy5-4x_000.tif")))[min_frame:max_frame:skip_frames]
+            elif channel == "gfp":
+                image_files = sorted(glob.glob(os.path.join(directory_path, "*gfp-4x_000.tif")))[min_frame:max_frame:skip_frames]
+            
+            intensities = []
+            frames = []
+            
+            for i, image_file in enumerate(image_files):
+                img = imageio.imread(image_file) #/ 2**16  # Normalize to 16-bit
+                mean_intensity = np.mean(img[750:1250, 750:1250]) 
+                frames.append(i * skip_frames)  # Adjust frames slightly for visual separation
+                intensities.append(mean_intensity)
+            
+            results_df = pd.DataFrame({
+                "frame": frames,
+                "mean_intensity": intensities - np.min(intensities)
+            })
+            
+            # Apply Gaussian filter to mean_intensity for smoothing
+            smoothed_intensities = gaussian_filter1d(results_df["mean_intensity"], sigma=1)  # Sigma controls the smoothing strength
+            
+            # Calculate shade for subcondition
+            alpha = 0.3 + (sub_idx / len(subconditions)) * 0.7  # Adjust alpha for subcondition shading
+            color = base_color * np.array([1, 1, 1, alpha])
+
+            # Plot each condition and subcondition with smoothed data
+            plt.plot(results_df["frame"] * time_interval / 60 / 60, smoothed_intensities, color=color, marker='o', linestyle='-', label=f"{condition} - {subcondition}")
+
+    plt.title(f"Fluorescence expression over time - {channel}")
+    plt.xlabel("Time (hours)")
+    plt.ylabel("Normalized Mean Fluorescence Intensity (A.U.)")
+    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+    plt.legend()
+
+    if log_scale:
+        plt.yscale('log')  # Set y-axis scale to log scale
+
+    # Determine the output path for saving the plot
+    output_path = os.path.join(data_path, f"{channel}_mean_fluorescence_vs_time.jpg")
+    plt.savefig(output_path, format='jpg', dpi=200)
+    plt.show()  # Close the figure after saving to free resources
+
+
+def fluorescence_heatmap(data_path, condition, subcondition, channel, time_interval=3, min_frame=0, max_frame=None, vmax=None, skip_frames=1):
+    """
+    Reads each image as a matrix, creates and saves a heatmap representing the normalized pixel-wise fluorescence intensity.
+
+    Args:
+    - data_path (str): Base directory where the images are stored.
+    - condition (str): Condition defining a subdirectory within the data path.
+    - subcondition (str): Subcondition defining a further subdirectory.
+    - channel (str): Channel specifying the fluorescence ('cy5' or 'gfp').
+    - time_interval (int): Time interval in seconds between frames.
+    - min_frame (int): Minimum frame number to start processing from.
+    - max_frame (int, optional): Maximum frame number to stop processing at.
+    """
+    # Determine the directory paths based on the channel
+    input_directory_path = os.path.join(data_path, condition, subcondition, "original")
+    output_directory_path = os.path.join(data_path, condition, subcondition, f"intensity_heatmap_{channel}")
+    
+    # Create the output directory if it doesn't exist
+    if not os.path.exists(output_directory_path):
+        os.makedirs(output_directory_path)
+
+    # Get all .tif files in the folder
+    image_files = sorted(glob.glob(os.path.join(input_directory_path, "*.tif")))[min_frame:max_frame:skip_frames] 
+    
+    # Loop through each image file and create a heatmap
+    for i, image_file in enumerate(image_files, start=min_frame):
+        # Read the image into a numpy array
+        intensity_matrix = imageio.imread(image_file) 
+
+        # Plot the heatmap
+        fig, ax = plt.subplots(figsize=(8, 8))
+        im = ax.imshow(intensity_matrix, cmap='gray', interpolation='nearest', extent=[-2762/2, 2762/2, -2762/2, 2762/2], vmin=0, vmax=vmax)
+        plt.colorbar(im, ax=ax, label='Normalized Fluorescence Intensity (A.U.)')
+        plt.title(f"Time (min): {(i - min_frame) * time_interval / 60:.2f}. \n{condition} - {subcondition} - {channel}")
+        plt.xlabel('x [µm]')
+        plt.ylabel('y [µm]')
         
-        ax.plot(df['time_min'], df['v (m/s)'] * 1e6, label=label, color=color)
-        ax.fill_between(df['time_min'], df['v (m/s)'] * 1e6, color=color, alpha=0.2)
-    
-    ax.set_xlabel('time (min)')
-    ax.set_ylabel('Velocity (µm/s)')
-    ax.legend()
-    
-    if logy == True:
-        ax.set_yscale('log')
-        
-    # Set axis limits if provided
-    if x_limits:
-        ax.set_xlim(x_limits)
-    if y_limits:
-        ax.set_ylim(y_limits)
-    
-    if filename:
-        plt.savefig(filename, format='jpg', dpi=150)
-    else:
-        plt.show()
-    
-    plt.close(fig)
+        # Save the heatmap
+        heatmap_filename = f"heatmap_frame_{i}.tif"
+        heatmap_path = os.path.join(output_directory_path, heatmap_filename)
+        plt.savefig(heatmap_path, bbox_inches='tight', pad_inches=0.1, dpi=300)
+        plt.close(fig)  # Close the figure to free memory
+ 
+def create_movies(data_path, condition, subcondition, channel, frame_rate=30, max_frame=None):
+    """
+    Creates video files from processed and annotated images stored in a specified directory.
 
-    
+    Args:
+    - data_path (str): Base path where the annotated images are stored.
+    - condition (str): Condition under which the annotated images are stored.
+    - subcondition (str): Subcondition under which the annotated images are stored.
+    - channel (str): The specific channel being processed ('cy5' or 'gfp').
+    - frame_rate (int, optional): Frame rate for the output video. Defaults to 30.
+    - max_frame (int, optional): Maximum number of frames to be included in the video. If None, all frames are included.
+    """
 
 
-# def distance(dfs, labels, filename=None, max_frame=None, x_limits=None, y_limits=None, figsize=(10, 6), logy=False):
-#     if len(dfs) != len(labels):
-#         raise ValueError("Number of dataframes and labels must be the same")
+    images_dir = os.path.join(data_path, condition, subcondition, f"intensity_heatmap_{channel}")
 
-#     fig, ax = plt.subplots(figsize=figsize)
+    image_files = natsorted(glob.glob(os.path.join(images_dir, "*.tif")))
 
-#     for df, label in zip(dfs, labels):
-#         df = df.iloc[:max_frame,:]
-#         color = next(plt.gca()._get_lines.prop_cycler)['color']
-#         ax.plot(df['time_min'], df['distance (m)'] * 1e6, '-', color=color)  # Plotting the line
-#         ax.plot(df['time_min'].iloc[-1], df['distance (m)'].iloc[-1] * 1e6, 'o', label=label, markersize=16, color=color)  # Plotting the glyph
+    if max_frame is not None:
+        image_files = image_files[:max_frame]
 
-#     ax.set_xlabel('time (min)')
-#     ax.set_ylabel('Distance (µm)')
-#     ax.legend()
+    if not image_files:
+        print("No images found for video creation.")
+        return
 
-#     if x_limits:
-#         ax.set_xlim(x_limits)
-#     if y_limits:
-#         ax.set_ylim(y_limits)
+    # Get the resolution of the first image (assuming all images are the same size)
+    first_image = cv2.imread(image_files[0])
+    video_resolution = (first_image.shape[1], first_image.shape[0])  # Width x Height
 
-#     if logy == True:
-#         ax.set_yscale('log')
-        
-#     if filename:
-#         plt.savefig(filename, format='jpg', dpi=150)
-#     else:
-#         plt.show()
+    # Define the codec and create VideoWriter object
+    fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+    out_path = os.path.join(data_path, condition, subcondition, f"{condition}_{subcondition}-{channel}.avi")
+    out = cv2.VideoWriter(out_path, fourcc, frame_rate, video_resolution)
 
-#     plt.close(fig)
+    for file_path in image_files:
+        img = cv2.imread(file_path)
+        out.write(img)  # Write the image frame to the video
 
-    
-    
-# def power(dfs, labels, filename=None, max_frame=None, x_limits=None, y_limits=None, logy=True, figsize=(10, 6)):
-#     if len(dfs) != len(labels):
-#         raise ValueError("Number of dataframes and labels must be the same")
-    
-#     fig, ax = plt.subplots(figsize=figsize)
-    
-#     for df, label in zip(dfs, labels):
-#         df = df.iloc[:max_frame,:]
-#         color = next(plt.gca()._get_lines.prop_cycler)['color']
-#         ax.plot(df['time_min'], df['Power (W)'], label=label, color=color)
-#         ax.fill_between(df['time_min'], df['Power (W)'], alpha=0.2, color=color)
-    
-#     ax.set_xlabel('time (min)')
-#     ax.set_ylabel('Power (W)')
-    
-#     if logy == True:
-#         ax.set_yscale('log')
-    
-#     ax.legend()
-    
-#     if x_limits:
-#         ax.set_xlim(x_limits)
-#     if y_limits:
-#         ax.set_ylim(y_limits)
-    
-#     if filename:
-#         plt.savefig(filename, format='jpg', dpi=150)
-#     else:
-#         plt.show()
-    
-#     plt.close(fig)
-
-    
-    
-    
-# def vorticity(dfs, labels, filename=None, max_frame=None, x_limits=None, y_limits=None, logy=False, figsize=(10, 6)):
-#     if len(dfs) != len(labels):
-#         raise ValueError("Number of dataframes and labels must be the same")
-    
-#     fig, ax = plt.subplots(figsize=figsize)
-    
-#     for df, label in zip(dfs, labels):
-#         df = df.iloc[:max_frame,:]
-#         color = next(plt.gca()._get_lines.prop_cycler)['color']
-#         ax.plot(df['time_min'], df['vorticity (1/s)'], label=label, color=color)
-#         ax.fill_between(df['time_min'], df['vorticity (1/s)'], alpha=0.2, color=color)
-    
-#     ax.set_xlabel('time (min)')
-#     ax.set_ylabel('Vorticity (1/s)')
-#     ax.legend()
-    
-#     if logy == True:
-#         ax.set_yscale('log')
-    
-#     if x_limits:
-#         ax.set_xlim(x_limits)
-#     if y_limits:
-#         ax.set_ylim(y_limits)
-    
-#     if filename:
-#         plt.savefig(filename, format='jpg', dpi=150)
-#     else:
-#         plt.show()
-    
-#     plt.close(fig)
-
-    
-    
-# def divergence(dfs, labels, filename=None, max_frame=None, x_limits=None, y_limits=None, logy=False, figsize=(10, 6)):
-#     if len(dfs) != len(labels):
-#         raise ValueError("Number of dataframes and labels must be the same")
-    
-#     fig, ax = plt.subplots(figsize=figsize)
-    
-#     for df, label in zip(dfs, labels):
-#         df = df.iloc[:max_frame,:]
-#         color = next(plt.gca()._get_lines.prop_cycler)['color']
-#         ax.plot(df['time_min'], df['divergence (1/s)'], label=label, color=color)
-#         ax.fill_between(df['time_min'], df['divergence (1/s)'], alpha=0.2, color=color)
-    
-#     ax.set_xlabel('time (min)')
-#     ax.set_ylabel('Divergence (1/s)')
-#     ax.legend()
-    
-#     if logy == True:
-#         ax.set_yscale('log')
-  
-#     if x_limits:
-#         ax.set_xlim(x_limits)
-#     if y_limits:
-#         ax.set_ylim(y_limits)
-    
-#     if filename:
-#         plt.savefig(filename, format='jpg', dpi=150)
-#     else:
-#         plt.show()
-    
-#     plt.close(fig)
+    out.release()
+    print(f"Video saved to {out_path}")
 
 
+def process_all_conditions_and_subconditions(data_path, conditions, subconditions, channel, time_interval, skip_frames, vmax, frame_rate, min_frame, max_frame):
+    """
+    Wrapper function to create heatmaps and movies for all combinations of conditions and subconditions.
 
-# import os
-
-# def generate_image_sequence(dfs, plot_type, dir_name, labels, x_limits=None, y_limits=None, **kwargs):
-#     """
-#     Generates an image sequence of plots from a list of DataFrames, saving each image to a specified directory.
-    
-#     Parameters
-#     ----------
-#     dfs : list of pd.DataFrame
-#         The list of DataFrames containing the data to be plotted.
-#     plot_type : str
-#         The type of plot to generate, e.g., 'velocity', 'distance', 'power'.
-#     dir_name : str
-#         The name of the directory where the plots will be saved.
-#     labels : list of str
-#         The labels for the plots.
-#     x_limits : tuple of (float, float), optional
-#         The limits for the x-axis.
-#     y_limits : tuple of (float, float), optional
-#         The limits for the y-axis.
-#     kwargs : dict, optional
-#         Additional keyword arguments to pass to the inner plotting function.
-#     """
-    
-#     if len(dfs) != len(labels):
-#         raise ValueError("The number of dataframes and labels must be the same.")
-    
-#     # Check if directory exists, if not, create it
-#     if not os.path.exists(dir_name):
-#         os.makedirs(dir_name)
-    
-#     # Define a mapping of plot types to functions
-#     plot_functions = {
-#         'velocity': velocity,
-#         'distance': distance,
-#         'power': power,
-#         'vorticity': vorticity,
-#         'divergence': divergence
-#     }
-    
-#     # Get the appropriate plot function
-#     plot_func = plot_functions.get(plot_type)
-#     if plot_func is None:
-#         raise ValueError(f"Invalid plot type: {plot_type}. Expected one of: {', '.join(plot_functions.keys())}.")
-    
-#     # Create a subdirectory for the specific plot type
-#     plot_dir = os.path.join(dir_name, plot_type)
-#     if not os.path.exists(plot_dir):
-#         os.makedirs(plot_dir)
-    
-#     # Find the length of the largest DataFrame
-#     max_length = max(len(df) for df in dfs)
-    
-#     # Loop through each frame and save a plot for all dataframes
-#     for i in range(1, max_length + 1):
-#         # Create a list of dataframes each truncated to the current frame
-#         truncated_dfs = [df.iloc[:i,:] for df in dfs]
-#         plot_func(
-#             truncated_dfs,
-#             labels,
-#             x_limits=x_limits, y_limits=y_limits,
-#             filename=f"{plot_dir}/{plot_type}_plot_{i}.jpg",
-#             **kwargs  # Forward the additional keyword arguments to the inner plotting function
-#         )
-
-
-
-
-
-# import os
-# import glob
-# import matplotlib.pyplot as plt
-# import numpy as np
-# import pandas as pd
-# from scipy.interpolate import griddata
-# from tqdm import tqdm
-
-# def plot_feature_heatmaps(feature_keywords, input_dir, output_dir, display_single_frame=False):
-#     """
-#     Plots combined heatmaps for the given features across all frames and saves them.
-    
-#     Args:
-#     - feature_keywords (list of str): Keywords representing the desired features (e.g., ["velocity", "vorticity"]).
-#     - input_dir (str): Directory where the .txt files are located.
-#     - output_dir (str): Directory where the output plots should be saved.
-#     - display_single_frame (bool): If True, displays the heatmap of the first frame in the notebook itself.
-#     """
-    
-#     # Mapping from user-friendly keywords to actual column names in the .txt files
-#     feature_mapping = {
-#         'velocity': 'magnitude [μm/s]',
-#         'vorticity': 'vorticity [1/s]',
-#         'divergence': 'divergence [1/s]',
-#         'shear': 'simple shear [1/s]',
-#         'strain': 'simple strain [1/s]'
-#     }
-    
-#     # Mapping from feature to colormap
-#     colormap_mapping = {
-#         'velocity': 'viridis',
-#         'vorticity': 'bwr',
-#         'divergence': 'Set2',
-#         'shear': 'PiYG',
-#         'strain': 'coolwarm'
-#     }
-    
-#     # Create combined feature name for folder and filenames
-#     combined_name = "_".join(feature_keywords) + ("_heatmap" if len(feature_keywords) > 1 else "")
-    
-#     # Pattern for input .txt files
-#     input_pattern = os.path.join(input_dir, 'PIVlab_*.txt')
-    
-#     # Create a dictionary to store global min and max values for each feature
-#     global_feature_range = {keyword: [float('inf'), float('-inf')] for keyword in feature_keywords}
-
-#     for filepath in glob.glob(input_pattern):
-#         df = pd.read_csv(filepath, sep=',', skiprows=2)
-        
-#         # Add a new column for velocity in micrometers per second (μm/s)
-#         if 'magnitude [m/s]' in df.columns and 'magnitude [μm/s]' not in df.columns:
-#             df['magnitude [μm/s]'] = df['magnitude [m/s]'] * 1e6
-        
-#         for keyword in feature_keywords:
-#             feature_column = feature_mapping[keyword]
-#             local_min = df[feature_column].min()
-#             local_max = df[feature_column].max()
-#             global_feature_range[keyword][0] = min(global_feature_range[keyword][0], local_min)
-#             global_feature_range[keyword][1] = max(global_feature_range[keyword][1], local_max)
-    
-#     # Construct a new sub-directory path
-#     sub_dir = os.path.join(output_dir, combined_name)
-
-#     # Ensure the sub-directory exists
-#     if not os.path.exists(sub_dir) and not display_single_frame:
-#         os.makedirs(sub_dir)
-
-#     # Use these values to fix the range of the colormap when plotting each heatmap
-#     filepaths = sorted(glob.glob(input_pattern))
-    
-#     for filepath in filepaths:
-#         frame_num = os.path.basename(filepath).split('_')[-1].split('.')[0]
-#         df = pd.read_csv(filepath, sep=',', skiprows=2)
-#         df['x [mm]'] = df['x [m]'] * 1000
-#         df['y [mm]'] = df['y [m]'] * 1000
-        
-#         # Ensure the velocity column in micrometers per second is present
-#         if 'magnitude [m/s]' in df.columns and 'magnitude [μm/s]' not in df.columns:
-#             df['magnitude [μm/s]'] = df['magnitude [m/s]'] * 1e6
-        
-#         fig, ax = plt.subplots(figsize=(10, 8))
-        
-#         for keyword in feature_keywords:
-#             feature_column = feature_mapping[keyword]
-#             x = df['x [mm]'].values
-#             y = df['y [mm]'].values
-#             feature_values = df[feature_column].values
-
-#             xi = np.linspace(x.min(), x.max(), len(np.unique(x)))
-#             yi = np.linspace(y.min(), y.max(), len(np.unique(y)))
-#             zi = griddata((x, y), feature_values, (xi[None, :], yi[:, None]), method='linear')
-
-#             cmap = colormap_mapping[keyword]
-#             alpha = 0.5 if keyword != 'velocity' else 1.0  # Adjust alpha for overlapping
-
-#             c = ax.pcolormesh(xi, yi, zi, shading='auto', cmap=cmap, alpha=alpha, 
-#                               vmin=global_feature_range[keyword][0], 
-#                               vmax=global_feature_range[keyword][1])
-#             fig.colorbar(c, ax=ax, label=feature_column)
-
-#         ax.set_title(f"{combined_name.replace('_', ' ').title()} - Frame {frame_num}")
-#         ax.set_xlabel("x [mm]")
-#         ax.set_ylabel("y [mm]")
-
-#         # If display_single_frame is True, show the plot for the first frame and return
-#         if display_single_frame:
-#             plt.show()
-#             return "Displayed the heatmap for the first frame in the notebook!"
-        
-#         filename = f'{combined_name}_{frame_num}.png'
-#         fig.savefig(os.path.join(sub_dir, filename))
-#         plt.close(fig)
-
-#     return f"Global min and max of features determined, and all combined plots saved in {sub_dir}!"
-
+    Args:
+    - data_path (str): Base directory where the images are stored.
+    - conditions (list of str): List of condition names.
+    - subconditions (list of str): List of subcondition names.
+    - channel (str): Channel specifying the fluorescence ('cy5' or 'gfp').
+    - time_interval (int): Time interval in seconds between frames for heatmap.
+    - skip_frames (int): Number of frames to skip between each processed frame for heatmap.
+    - vmax (int): Maximum value for normalization in the heatmap.
+    - frame_rate (int): Frame rate for the output video.
+    """
+    for condition in conditions:
+        for subcondition in subconditions:
+            # Create heatmaps for each condition and subcondition
+            fluorescence_heatmap(
+                data_path=data_path,
+                condition=condition,
+                subcondition=subcondition,
+                channel=channel,
+                time_interval=time_interval * skip_frames / 2, # this /2 is to consider that we are always at least be skipping one frame 
+                min_frame=min_frame,
+                max_frame=max_frame,
+                vmax=vmax,
+                skip_frames=skip_frames
+            )
+            
+            # Create annotated image movies for each condition and subcondition
+            create_movies(
+                data_path=data_path,
+                condition=condition,
+                subcondition=subcondition,
+                channel=channel,
+                frame_rate=frame_rate,
+                max_frame=max_frame
+            )
