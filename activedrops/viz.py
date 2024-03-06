@@ -93,7 +93,7 @@ def plot_mean_fluorescence_over_time(data_path, conditions, subconditions, chann
             frames = []
             
             for i, image_file in enumerate(image_files):
-                img = imageio.imread(image_file) #/ 2**16  # Normalize to 16-bit
+                img = imageio.imread(image_file) / 2**16  # Normalize to 16-bit
                 mean_intensity = np.mean(img[750:1250, 750:1250]) 
                 frames.append(i * skip_frames)  # Adjust frames slightly for visual separation
                 intensities.append(mean_intensity)
@@ -151,17 +151,24 @@ def fluorescence_heatmap(data_path, condition, subcondition, channel, time_inter
 
     # Get all .tif files in the folder
     image_files = sorted(glob.glob(os.path.join(input_directory_path, "*.tif")))[min_frame:max_frame:skip_frames] 
+
+    if channel == "cy5":
+        image_files = sorted(glob.glob(os.path.join(input_directory_path, "*cy5-4x_000.tif")))[min_frame:max_frame:skip_frames]
+    elif channel == "gfp":
+        image_files = sorted(glob.glob(os.path.join(input_directory_path, "*gfp-4x_000.tif")))[min_frame:max_frame:skip_frames]
+            
     
     # Loop through each image file and create a heatmap
     for i, image_file in enumerate(image_files, start=min_frame):
         # Read the image into a numpy array
-        intensity_matrix = imageio.imread(image_file) 
+        intensity_matrix = imageio.imread(image_file) / 2**16  # Normalize the 16-bit image to 1.0
 
         # Plot the heatmap
         fig, ax = plt.subplots(figsize=(8, 8))
         im = ax.imshow(intensity_matrix, cmap='gray', interpolation='nearest', extent=[-2762/2, 2762/2, -2762/2, 2762/2], vmin=0, vmax=vmax)
+        
         plt.colorbar(im, ax=ax, label='Normalized Fluorescence Intensity (A.U.)')
-        plt.title(f"Time (min): {(i - min_frame) * time_interval / 60:.2f}. \n{condition} - {subcondition} - {channel}")
+        plt.title(f"Time (min): {(i - min_frame) * time_interval / 60:.2f}. \n{condition} - {subcondition} - {channel}", fontsize=14, )
         plt.xlabel('x [µm]')
         plt.ylabel('y [µm]')
         
@@ -169,8 +176,9 @@ def fluorescence_heatmap(data_path, condition, subcondition, channel, time_inter
         heatmap_filename = f"heatmap_frame_{i}.tif"
         heatmap_path = os.path.join(output_directory_path, heatmap_filename)
         plt.savefig(heatmap_path, bbox_inches='tight', pad_inches=0.1, dpi=300)
-        plt.close(fig)  # Close the figure to free memory
- 
+        plt.close(fig)
+
+
 def create_movies(data_path, condition, subcondition, channel, frame_rate=30, max_frame=None):
     """
     Creates video files from processed and annotated images stored in a specified directory.
@@ -183,10 +191,10 @@ def create_movies(data_path, condition, subcondition, channel, frame_rate=30, ma
     - frame_rate (int, optional): Frame rate for the output video. Defaults to 30.
     - max_frame (int, optional): Maximum number of frames to be included in the video. If None, all frames are included.
     """
-
+    output_dir = os.path.join(data_path, f"single_movies_{channel}")
+    os.makedirs(output_dir, exist_ok=True)
 
     images_dir = os.path.join(data_path, condition, subcondition, f"intensity_heatmap_{channel}")
-
     image_files = natsorted(glob.glob(os.path.join(images_dir, "*.tif")))
 
     if max_frame is not None:
@@ -202,7 +210,7 @@ def create_movies(data_path, condition, subcondition, channel, frame_rate=30, ma
 
     # Define the codec and create VideoWriter object
     fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-    out_path = os.path.join(data_path, condition, subcondition, f"{condition}_{subcondition}-{channel}.avi")
+    out_path = os.path.join(output_dir, f"{condition}_{subcondition}-{channel}.avi")
     out = cv2.VideoWriter(out_path, fourcc, frame_rate, video_resolution)
 
     for file_path in image_files:
@@ -227,6 +235,10 @@ def process_all_conditions_and_subconditions(data_path, conditions, subcondition
     - vmax (int): Maximum value for normalization in the heatmap.
     - frame_rate (int): Frame rate for the output video.
     """
+
+    # if channel == "gfp":
+    #     min_frame = min_frame + 1
+
     for condition in conditions:
         for subcondition in subconditions:
             # Create heatmaps for each condition and subcondition
@@ -235,7 +247,7 @@ def process_all_conditions_and_subconditions(data_path, conditions, subcondition
                 condition=condition,
                 subcondition=subcondition,
                 channel=channel,
-                time_interval=time_interval * skip_frames / 2, # this /2 is to consider that we are always at least be skipping one frame 
+                time_interval=time_interval * skip_frames, 
                 min_frame=min_frame,
                 max_frame=max_frame,
                 vmax=vmax,
@@ -251,3 +263,72 @@ def process_all_conditions_and_subconditions(data_path, conditions, subcondition
                 frame_rate=frame_rate,
                 max_frame=max_frame
             )
+
+
+
+
+
+def grid_heatmaps(data_path, conditions, subconditions, channel):
+    output_dir = os.path.join(data_path, f"grid_heatmaps_{channel}")
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Collect all image paths for the specified channel across all conditions and subconditions
+    all_image_paths = []
+    for condition in conditions:
+        for subcondition in subconditions:
+            image_dir = os.path.join(data_path, condition, subcondition, f"intensity_heatmap_{channel}")
+            image_paths = natsorted([os.path.join(image_dir, f) for f in os.listdir(image_dir) if f.endswith('.tif')])
+            all_image_paths.extend(image_paths)
+    
+    # Number of frames is based on the unique frames across all conditions and subconditions
+    num_frames = len(set(os.path.basename(path) for path in all_image_paths))
+    
+    # Iterate over the number of unique frames
+    for frame_idx in range(0, num_frames):
+        fig, ax = plt.subplots(len(subconditions), len(conditions), figsize=(len(subconditions)*4, len(conditions)*4))
+        
+        for i, subcondition in enumerate(subconditions):
+            for j, condition in enumerate(conditions):
+                # Construct the path for the current heatmap for each condition and subcondition
+                image_path = os.path.join(data_path, condition, subcondition, f"intensity_heatmap_{channel}", f"heatmap_frame_{frame_idx}.tif")
+                
+                # Ensure the file exists before attempting to read it
+                if os.path.exists(image_path):
+                    im = imageio.imread(image_path)
+                    ax[i, j].imshow(im, cmap='gray')
+                    ax[i, j].axis('off')
+                else:
+                    # Handle missing files (optional) by clearing or placing a placeholder
+                    ax[i, j].axis('off')
+        
+        plt.subplots_adjust(wspace=0, hspace=0)
+        output_path = os.path.join(output_dir, f"heatmap_grid_frame_{frame_idx}.png")
+        plt.savefig(output_path, bbox_inches='tight', pad_inches=0.1, dpi=250)
+        plt.close(fig)
+
+
+def create_movies_grid(data_path, channel, frame_rate=30):
+
+    images_dir = os.path.join(data_path, f"grid_heatmaps_{channel}")
+
+    image_files = natsorted(glob.glob(os.path.join(images_dir, "*.png")))
+
+    if not image_files:
+        print("No images found for video creation.")
+        return
+
+    # Get the resolution of the first image (assuming all images are the same size)
+    first_image = cv2.imread(image_files[0])
+    video_resolution = (first_image.shape[1], first_image.shape[0])  # Width x Height
+
+    # Define the codec and create VideoWriter object
+    fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+    out_path = os.path.join(data_path, f"grid-{channel}.avi")
+    out = cv2.VideoWriter(out_path, fourcc, frame_rate, video_resolution)
+
+    for file_path in image_files:
+        img = cv2.imread(file_path)
+        out.write(img)  # Write the image frame to the video
+
+    out.release()
+    print(f"Video saved to {out_path}")
