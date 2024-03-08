@@ -54,7 +54,8 @@ def set_plotting_style():
     sns.set_context('notebook', rc=rc)
 
 
-def plot_mean_fluorescence_over_time(data_path, conditions, subconditions, channel, time_interval=3, min_frame=0, max_frame=None, skip_frames=1, log_scale=False):
+
+def plot_fluorescence_vs_time(data_path, conditions, subconditions, channel, time_interval=3, min_frame=0, max_frame=None, skip_frames=1, log_scale=False):
     """
     Computes and plots the mean fluorescence intensity over time for a given set of images across multiple conditions and subconditions,
     with visual grouping by condition and improved legend. Time is displayed in hours. The final plot, including all curves, is saved as a JPG file.
@@ -126,6 +127,7 @@ def plot_mean_fluorescence_over_time(data_path, conditions, subconditions, chann
     output_path = os.path.join(data_path, f"{channel}_mean_fluorescence_vs_time.jpg")
     plt.savefig(output_path, format='jpg', dpi=200)
     plt.show()  # Close the figure after saving to free resources
+    
 
 
 def fluorescence_heatmap(data_path, condition, subcondition, channel, time_interval=3, min_frame=0, max_frame=None, vmax=None, skip_frames=1):
@@ -179,6 +181,7 @@ def fluorescence_heatmap(data_path, condition, subcondition, channel, time_inter
         plt.close(fig)
 
 
+
 def create_movies(data_path, condition, subcondition, channel, frame_rate=30, max_frame=None):
     """
     Creates video files from processed and annotated images stored in a specified directory.
@@ -221,6 +224,7 @@ def create_movies(data_path, condition, subcondition, channel, frame_rate=30, ma
     print(f"Video saved to {out_path}")
 
 
+
 def process_all_conditions_and_subconditions(data_path, conditions, subconditions, channel, time_interval, skip_frames, vmax, frame_rate, min_frame, max_frame):
     """
     Wrapper function to create heatmaps and movies for all combinations of conditions and subconditions.
@@ -236,8 +240,6 @@ def process_all_conditions_and_subconditions(data_path, conditions, subcondition
     - frame_rate (int): Frame rate for the output video.
     """
 
-    # if channel == "gfp":
-    #     min_frame = min_frame + 1
 
     for condition in conditions:
         for subcondition in subconditions:
@@ -263,8 +265,6 @@ def process_all_conditions_and_subconditions(data_path, conditions, subcondition
                 frame_rate=frame_rate,
                 max_frame=max_frame
             )
-
-
 
 
 
@@ -305,6 +305,7 @@ def grid_heatmaps(data_path, conditions, subconditions, channel):
         output_path = os.path.join(output_dir, f"heatmap_grid_frame_{frame_idx}.png")
         plt.savefig(output_path, bbox_inches='tight', pad_inches=0.1, dpi=250)
         plt.close(fig)
+
 
 
 def create_movies_grid(data_path, channel, frame_rate=30):

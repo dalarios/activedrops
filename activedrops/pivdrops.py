@@ -66,7 +66,7 @@ def set_plotting_style():
     plt.rc('legend', title_fontsize='8', frameon=True, 
            facecolor='#E3DCD0', framealpha=1)
     sns.set_style('darkgrid', rc=rc)
-    sns.set_palette("colorblind", color_codes=True)
+    sns.set_palette("viridis", color_codes=True)
     sns.set_context('notebook', rc=rc)
 
 
@@ -245,10 +245,34 @@ def process_piv_data(data_path, condition, subcondition, min_frame=0, max_frame=
     mean_df_output_path = os.path.join(output_directory_dfs, "mean_values.csv")
     mean_data_frame.to_csv(mean_df_output_path, index=False)
 
-    pivot_df_output_path = os.path.join(output_directory_dfs, "features_matrices.csv", quoting=csv.QUOTE_NONE)
+    pivot_df_output_path = os.path.join(output_directory_dfs, "features_matrices.csv")
     pivot_data_frame.to_csv(pivot_df_output_path, index=False)
 
-    return pivot_data_frame
+    # return mean_data_frame, pivot_data_frame, average_values
+    return mean_data_frame, pivot_data_frame
+
+
+
+def process_and_average_piv_data(data_path, conditions, subconditions, min_frame, max_frame, plot_autocorrelation=False):
+    for condition in conditions:
+        ms = []  # List to store the m dataframes for current condition
+
+        # Process PIV data for each subcondition
+        for subcondition in subconditions:
+            m, p = process_piv_data(
+                data_path, condition, subcondition,
+                min_frame=min_frame, max_frame=max_frame,
+                plot_autocorrelation=plot_autocorrelation
+            )
+            ms.append(m)
+
+        # Compute the average of the m dataframes
+        m_avg = pd.concat(ms).groupby(level=0).mean()
+
+        # Create directory and save the averaged dataframe
+        avg_dir = os.path.join(data_path, condition, 'averaged')
+        os.makedirs(avg_dir, exist_ok=True)
+        m_avg.to_csv(f"{avg_dir}/{condition}_average.csv")
 
 
 
@@ -357,7 +381,7 @@ def piv_heatmap(df, data_path, condition, subcondition, feature_limits, time_int
             cbar = plt.colorbar(im)
             cbar.set_label(feature)
             time = df.iloc[j, -1]
-            plt.title(f"PIV - {feature}  ||  time: {time * time_interval/60} min")
+            plt.title(f"PIV - {feature}  ||  time: {int(time * time_interval/60)} min")
 
             os.makedirs(os.path.dirname(output_directory_heatmaps), exist_ok=True)
             plt.savefig(output_directory_heatmaps, format='jpg', dpi=250)
@@ -514,3 +538,69 @@ def plot_features(data_paths, conditions, subconditions, features, time_interval
         plt.savefig(output_directory_plots, format='jpg', dpi=400)
         plt.close()
 
+
+
+
+def plot_features_averages(data_paths, conditions, subconditions, features, time_intervals, sigma=2, min_frame=None, max_frame=None):
+    """
+    Plots each feature with respect to frame for multiple DataFrames.
+
+    Parameters:
+    - dfs (list of DataFrame): List of DataFrames to plot.
+    - data_paths (list of str): List of base paths for saving the plots, corresponding to each DataFrame.
+    - conditions (list of str): List of condition names corresponding to each DataFrame.
+    - subconditions (list of str): List of subcondition names corresponding to each DataFrame.
+    - time_intervals (list of int): List of time intervals between frames, used for x-axis scaling, corresponding to each DataFrame.
+    - sigma (int, optional): Standard deviation for Gaussian filter applied to the data. Default is 2.
+
+    The function creates a plot for each feature in the DataFrame(s), combining data from all provided
+    DataFrames. Plots are saved as JPEG images in the specified data_paths.
+    """
+    
+    # load dataframes
+    dfs = []  # Initialize an empty list
+
+    for data_path, condition, subcondition, time_interval in zip(data_paths, conditions, subconditions, time_intervals):
+        # Construct the file path
+        file_path = os.path.join(data_path, condition, subcondition, f"{condition}_average.csv")
+        # Read the CSV file and append the DataFrame to the list
+        df = pd.read_csv(file_path)
+
+        # apply Gaussian filter to mean_data_frame
+        df.iloc[:, :] = df.iloc[:, :].apply(lambda x: gaussian_filter(x, sigma=sigma))
+
+        # replace "frame" with the proper time
+        df = df.rename(columns={"frame":"time [min]"})
+        df["time [min]"] = df["time [min]"] * time_interval / 60
+
+        # add Work (Joules) and CL & velocity in microns
+        df = df.rename(columns={"data type [-]_mean" : "work [J]", "correlation length [m]_mean" : "correlation length [um]", "velocity magnitude [m/s]_mean" : "velocity magnitude [um/s]"})
+        df["work [J]"] = df["power [W]_mean"].cumsum()
+        df["correlation length [um]" ] = df["correlation length [um]"] * 1e6
+        df["velocity magnitude [um/s]"] = df["velocity magnitude [um/s]"] * 1e6
+
+        # min and max frames
+        df = df.iloc[min_frame:max_frame,:]
+
+        dfs.append(df)
+
+    # generate PCA
+    plot_pca(dfs, data_paths, conditions, subconditions, features)
+
+    # plot each feature
+    for feature in dfs[0].columns[:-1]:
+        plt.figure(figsize=(10, 6))
+
+        for df, data_path, condition, subcondition, time_interval in zip(dfs, data_paths, conditions, subconditions, time_intervals):
+            output_directory_plots = os.path.join(data_path, condition, subcondition, "plots_PIV", f"{feature.split()[0]}_plot.jpg")
+            os.makedirs(os.path.dirname(output_directory_plots), exist_ok=True)
+            # filtered_values = gaussian_filter(df[feature], sigma=sigma)
+            plt.plot(df["time [min]"] , df[feature], marker='o', linestyle='-', markersize=1, linewidth=1, label=f'{condition}_{subcondition}')
+
+        plt.xlabel('Time (minutes)')
+        plt.ylabel(feature)
+        plt.title(f"PIV - {feature}")
+        plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+        plt.legend()
+        plt.savefig(output_directory_plots, format='jpg', dpi=400)
+        plt.close()
