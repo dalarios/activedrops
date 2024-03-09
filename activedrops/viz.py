@@ -129,6 +129,77 @@ def plot_fluorescence_vs_time(data_path, conditions, subconditions, channel, tim
     plt.show()  # Close the figure after saving to free resources
     
 
+def plot_average_fluorescence_vs_time(data_path, conditions, subconditions, channel, time_interval=3, min_frame=0, max_frame=None, skip_frames=1, log_scale=False):
+    """
+    Computes and plots the mean fluorescence intensity over time for a given set of images across multiple conditions,
+    averaging the subconditions within each condition. Time is displayed in hours. The final plot, including all curves,
+    is saved as a JPG file.
+
+    Parameters:
+    - data_path (str): Base path where the images are stored.
+    - conditions (list of str): List of condition names.
+    - subconditions (list of str): List of subcondition names.
+    - channel (str): Channel name.
+    - time_interval (int): Time interval between frames in minutes.
+    - min_frame (int): Minimum frame number to process.
+    - max_frame (int): Maximum frame number to process.
+    - skip_frames (int): Number of frames to skip between plotted points.
+    - log_scale (bool): Whether to plot the y-axis in log scale.
+    """
+    plt.figure(figsize=(12, 8))
+    # Use a colormap to generate distinct colors for each condition
+    cmap = plt.get_cmap('inferno')
+    condition_colors = cmap(np.linspace(0, 1, len(conditions) + 1)[:-1])
+
+    for condition_idx, condition in enumerate(conditions):
+        condition_intensities = []
+        frames = []
+
+        for sub_idx, subcondition in enumerate(subconditions):
+            directory_path = os.path.join(data_path, condition, subcondition, "original")
+            # files can be either img_00000****_cy5-4x_000 or img_00000****_gfp-4x_000.tif so load the appropriate channel
+            if channel == "cy5":
+                image_files = sorted(glob.glob(os.path.join(directory_path, "*cy5-4x_000.tif")))[min_frame:max_frame:skip_frames]
+            elif channel == "gfp":
+                image_files = sorted(glob.glob(os.path.join(directory_path, "*gfp-4x_000.tif")))[min_frame:max_frame:skip_frames]
+
+            intensities = []
+            for i, image_file in enumerate(image_files):
+                img = imageio.imread(image_file) / 2**16  # Normalize to 16-bit
+                mean_intensity = np.mean(img[750:1250, 750:1250])
+                if sub_idx == 0:
+                    frames.append(i * skip_frames)  # Adjust frames slightly for visual separation
+                intensities.append(mean_intensity)
+
+            condition_intensities.append(intensities)
+
+        # Average the intensities across subconditions for each condition
+        avg_intensities = np.mean(condition_intensities, axis=0)
+        results_df = pd.DataFrame({
+            "frame": frames,
+            "mean_intensity": avg_intensities - np.min(avg_intensities)
+        })
+
+        # Apply Gaussian filter to mean_intensity for smoothing
+        smoothed_intensities = gaussian_filter1d(results_df["mean_intensity"], sigma=1)  # Sigma controls the smoothing strength
+
+        # Plot each condition with smoothed data
+        color = condition_colors[condition_idx]
+        plt.plot(results_df["frame"] * time_interval / 60 / 60, smoothed_intensities, color=color, marker='o', linestyle='-', label=condition)
+
+    plt.title(f"Fluorescence expression over time - {channel}")
+    plt.xlabel("Time (hours)")
+    plt.ylabel("Normalized Mean Fluorescence Intensity (A.U.)")
+    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+    plt.legend()
+    if log_scale:
+        plt.yscale('log')  # Set y-axis scale to log scale
+
+    # Determine the output path for saving the plot
+    output_path = os.path.join(data_path, f"{channel}_averaged_fluorescence_vs_time.jpg")
+    plt.savefig(output_path, format='jpg', dpi=200)
+    plt.show()
+    # Close the figure after saving to free resources
 
 def fluorescence_heatmap(data_path, condition, subcondition, channel, time_interval=3, min_frame=0, max_frame=None, vmax=None, skip_frames=1):
     """
