@@ -134,7 +134,7 @@ def correlation_length(data_frame):
 
 
 
-def df_piv(data_path, condition, subcondition, min_frame=0, max_frame=None):
+def df_piv(data_path, condition, subcondition, min_frame=0, max_frame=None, skip_frames=1):
     """
     Processes Particle Image Velocimetry (PIV) data to create a DataFrame that combines mean values, 
     power calculations, and pivot matrices for each feature.
@@ -155,7 +155,7 @@ def df_piv(data_path, condition, subcondition, min_frame=0, max_frame=None):
     
     # Using a for loop instead of list comprehension
     dfs = []
-    for file in sorted(glob.glob(input_piv_data))[min_frame:max_frame]:
+    for file in sorted(glob.glob(input_piv_data))[min_frame:max_frame:skip_frames]:
         df = pd.read_csv(file, skiprows=2).fillna(0).rename(columns={
             "magnitude [m/s]": "velocity magnitude [m/s]",
             "simple shear [1/s]": "shear [1/s]",
@@ -168,7 +168,7 @@ def df_piv(data_path, condition, subcondition, min_frame=0, max_frame=None):
 
 
 
-def process_piv_data(data_path, condition, subcondition, min_frame=0, max_frame=None, plot_autocorrelation=True):
+def process_piv_data(data_path, condition, subcondition, min_frame=0, max_frame=None, skip_frames=1, plot_autocorrelation=True):
     """
     Generates a time series pivot DataFrame from input data.
 
@@ -191,7 +191,7 @@ def process_piv_data(data_path, condition, subcondition, min_frame=0, max_frame=
 
     # Reading data frames
     # Note: Assuming df_piv and correlation_length are pre-defined functions
-    data_frames = df_piv(data_path, condition, subcondition, min_frame, max_frame)
+    data_frames = df_piv(data_path, condition, subcondition, min_frame, max_frame, skip_frames)
 
 
     # Calculating mean values with valid vectors only
@@ -408,7 +408,7 @@ def create_heatmap_movies(data_path, condition, subcondition, feature_limits, fr
     for feature in feature_limits.keys():
         feature_name_for_file = feature.split()[0]
         heatmap_dir = os.path.join(data_path, condition, subcondition, "heatmaps_PIV", f"{feature.split()[0]}", f"{feature.split()[0]}_heatmap_****.jpg")
-        heatmap_files = natsorted(glob.glob(heatmap_dir))
+        heatmap_files = sorted(glob.glob(heatmap_dir), key=lambda x: int(x.split("_")[-1].split(".")[0]))
 
         if not heatmap_files:
             continue

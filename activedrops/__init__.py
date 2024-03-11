@@ -5,6 +5,7 @@
 from . import viz
 from . import pivdrops
 from . import autocorrelation
+from . import quadrop
 
 
 _author_ = """David Larios"""
