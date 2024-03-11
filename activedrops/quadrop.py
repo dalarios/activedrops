@@ -87,21 +87,22 @@ def set_plotting_style():
 
 
 
+
 ######################################### raw data processing #########################################
 
-# Take the image and plot fluorescence intensity vs time 
-def plot_fluorescence_vs_time(data_path, conditions, subconditions, channel, time_intervals, min_frame=0, max_frame=None, skip_frames=1, log_scale=False, timescale="h"):
+# plot the fluorescence over time of imaging data
+def plot_fluorescence_vs_time(data_path, conditions, subconditions, channel, time_intervals, min_frame, max_frame, skip_frames=1, log_scale=False, timescale="h"):
     """
     Computes and plots the mean fluorescence intensity over time for a given set of images across multiple conditions and subconditions,
-    with visual grouping by condition and improved legend. Time is displayed based on the specified timescale and time interval for each condition
-    or subcondition. The final plot, including all curves, is saved as a JPG file.
+    with visual grouping by condition and improved legend. Time is displayed based on the specified timescale and time interval for each condition.
+    The final plot, including all curves, is saved as a JPG file.
 
     Parameters:
     - data_path (str): Base path where the images are stored.
     - conditions (list of str): List of condition names.
     - subconditions (list of str): List of subcondition names.
     - channel (str): Channel name.
-    - time_intervals (dict): Dictionary mapping each condition or subcondition to its time interval between frames in minutes.
+    - time_intervals (list of int): List of time intervals between frames in minutes, one for each condition.
     - min_frame (int): Minimum frame number to process.
     - max_frame (int): Maximum frame number to process.
     - skip_frames (int): Number of frames to skip between plotted points.
@@ -124,13 +125,17 @@ def plot_fluorescence_vs_time(data_path, conditions, subconditions, channel, tim
     else:
         raise ValueError("Invalid timescale. Choose either 'h' for hours or 'min' for minutes.")
 
+    # Check if the number of time intervals matches the number of conditions
+    if len(time_intervals) != len(conditions):
+        raise ValueError("The number of time intervals must match the number of conditions.")
+
     # Generate shades for subconditions within each condition
-    for condition_idx, condition in enumerate(conditions):
+    for condition_idx, (condition, time_interval) in enumerate(zip(conditions, time_intervals)):
         base_color = condition_colors[condition_idx]
         
         for sub_idx, subcondition in enumerate(subconditions):
             directory_path = os.path.join(data_path, condition, subcondition, "original")
-            current_time_interval = time_intervals.get(condition, time_intervals.get(subcondition, 3)) # Default to 3 if not specified
+            current_time_interval = time_interval
             
             if channel == "cy5":
                 image_files = sorted(glob.glob(os.path.join(directory_path, "*cy5-4x_000.tif")))[min_frame:max_frame:skip_frames]
@@ -171,19 +176,19 @@ def plot_fluorescence_vs_time(data_path, conditions, subconditions, channel, tim
     plt.savefig(output_path, format='jpg', dpi=200)
     plt.show()
 
-## Same but with average fluorescence per condition
-def plot_average_fluorescence_vs_time(data_path, conditions, subconditions, channel, time_intervals, min_frame=0, max_frame=None, skip_frames=1, log_scale=False, timescale='h'):
+# plot the average fluorescence over time of imaging data
+def plot_average_fluorescence_vs_time(data_path, conditions, subconditions, channel, time_intervals, min_frame, max_frame, skip_frames=1, log_scale=False, timescale='h'):
     """
     Computes and plots the mean fluorescence intensity over time for a given set of images across multiple conditions,
-    averaging the subconditions within each condition. Time is displayed based on the specified timescale and time interval for each condition
-    or subcondition. The final plot, including all curves, is saved as a JPG file.
+    averaging the subconditions within each condition. Time is displayed based on the specified timescale and time interval for each condition.
+    The final plot, including all curves, is saved as a JPG file.
 
     Parameters:
     - data_path (str): Base path where the images are stored.
     - conditions (list of str): List of condition names.
     - subconditions (list of str): List of subcondition names.
     - channel (str): Channel name.
-    - time_intervals (dict): Dictionary mapping each condition or subcondition to its time interval between frames in minutes.
+    - time_intervals (list of int): List of time intervals between frames in minutes, one for each condition.
     - min_frame (int): Minimum frame number to process.
     - max_frame (int): Maximum frame number to process.
     - skip_frames (int): Number of frames to skip between plotted points.
@@ -203,13 +208,17 @@ def plot_average_fluorescence_vs_time(data_path, conditions, subconditions, chan
     else:
         raise ValueError("Invalid timescale. Choose either 'h' for hours or 'min' for minutes.")
 
-    for condition_idx, condition in enumerate(conditions):
+    # Check if the number of time intervals matches the number of conditions
+    if len(time_intervals) != len(conditions):
+        raise ValueError("The number of time intervals must match the number of conditions.")
+
+    for condition_idx, (condition, time_interval) in enumerate(zip(conditions, time_intervals)):
         condition_intensities = []
         frames = []
 
         for sub_idx, subcondition in enumerate(subconditions):
             directory_path = os.path.join(data_path, condition, subcondition, "original")
-            current_time_interval = time_intervals.get(condition, time_intervals.get(subcondition, 3)) # Default to 3 if not specified
+            current_time_interval = time_interval
 
             if channel == "cy5":
                 image_files = sorted(glob.glob(os.path.join(directory_path, "*cy5-4x_000.tif")))[min_frame:max_frame:skip_frames]
@@ -252,8 +261,8 @@ def plot_average_fluorescence_vs_time(data_path, conditions, subconditions, chan
     plt.savefig(output_path, format='jpg', dpi=200)
     plt.show()
 
-
-def fluorescence_heatmap(data_path, condition, subcondition, channel, time_interval=3, min_frame=0, max_frame=None, vmax=None, skip_frames=1):
+# plot the raw image as heatmap of fluorescence intensity
+def fluorescence_heatmap(data_path, condition, subcondition, channel, time_interval, min_frame, max_frame, vmax, skip_frames=1):
     """
     Reads each image as a matrix, creates and saves a heatmap representing the normalized pixel-wise fluorescence intensity.
 
@@ -303,7 +312,8 @@ def fluorescence_heatmap(data_path, condition, subcondition, channel, time_inter
         plt.savefig(heatmap_path, bbox_inches='tight', pad_inches=0.1, dpi=300)
         plt.close(fig)
 
-def create_movies(data_path, condition, subcondition, channel, movie_type, feature_limits=None, frame_rate=120, skip_frames=1, max_frame=None):
+# create a movie from the processed images -- general function
+def create_movies(data_path, condition, subcondition, channel, movie_type, frame_rate, feature_limits=None, max_frame=None):
     """
     Creates video files from processed and annotated images stored in a specified directory.
 
@@ -312,13 +322,11 @@ def create_movies(data_path, condition, subcondition, channel, movie_type, featu
     - condition (str): Condition under which the annotated images are stored.
     - subcondition (str): Subcondition under which the annotated images are stored.
     - channel (str): The specific channel being processed ('cy5' or 'gfp').
-    - movie_type (str): Type of movie to create ('single', 'grid', or 'heatmap').
-    - feature_limits (dict, optional): Dictionary specifying the limits for each feature (only for 'heatmap' movie type).
+    - movie_type (str): Type of movie to create ('single', 'grid', or 'PIV').
+    - feature_limits (dict, optional): Dictionary specifying the limits for each feature (only for 'PIV' movie type).
     - frame_rate (int, optional): Frame rate for the output video. Defaults to 120.
-    - skip_frames (int, optional): Number of frames to skip. Defaults to 1.
     - max_frame (int, optional): Maximum number of frames to be included in the video. If None, all frames are included.
     """
-    frame_rate = frame_rate / skip_frames
 
     if movie_type == 'single':
         output_dir = os.path.join(data_path, f"single_movies_{channel}")
@@ -330,7 +338,7 @@ def create_movies(data_path, condition, subcondition, channel, movie_type, featu
         images_dir = os.path.join(data_path, f"grid_heatmaps_{channel}")
         image_files = natsorted(glob.glob(os.path.join(images_dir, "*.png")))
         out_path = os.path.join(data_path, f"grid-{channel}.avi")
-    elif movie_type == 'heatmap':
+    elif movie_type == 'PIV':
         plots_dir = f"{data_path}/{condition}/{subcondition}/heatmaps_PIV/"
         for feature in feature_limits.keys():
             feature_name_for_file = feature.split()[0]
@@ -379,68 +387,11 @@ def create_movies(data_path, condition, subcondition, channel, movie_type, featu
 
     out.release()
     print(f"Video saved to {out_path}")
-# def create_movies(data_path, condition, subcondition, channel, frame_rate=120, skip_frames=1, max_frame=None):
-#     """
-#     Creates video files from processed and annotated images stored in a specified directory.
 
-#     Args:
-#     - data_path (str): Base path where the annotated images are stored.
-#     - condition (str): Condition under which the annotated images are stored.
-#     - subcondition (str): Subcondition under which the annotated images are stored.
-#     - channel (str): The specific channel being processed ('cy5' or 'gfp').
-#     - frame_rate (int, optional): Frame rate for the output video. Defaults to 30.
-#     - max_frame (int, optional): Maximum number of frames to be included in the video. If None, all frames are included.
-#     """
-
-#     frame_rate = frame_rate/skip_frames
-
-#     output_dir = os.path.join(data_path, f"single_movies_{channel}")
-#     os.makedirs(output_dir, exist_ok=True)
-
-#     images_dir = os.path.join(data_path, condition, subcondition, f"intensity_heatmap_{channel}")
-#     image_files = natsorted(glob.glob(os.path.join(images_dir, "*.tif")))
-
-#     if max_frame is not None:
-#         image_files = image_files[:max_frame]
-
-#     if not image_files:
-#         print("No images found for video creation.")
-#         return
-
-#     # Get the resolution of the first image (assuming all images are the same size)
-#     first_image = cv2.imread(image_files[0])
-#     video_resolution = (first_image.shape[1], first_image.shape[0])  # Width x Height
-
-#     # Define the codec and create VideoWriter object
-#     fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-#     out_path = os.path.join(output_dir, f"{condition}_{subcondition}-{channel}.avi")
-#     out = cv2.VideoWriter(out_path, fourcc, frame_rate, video_resolution)
-
-#     for file_path in image_files:
-#         img = cv2.imread(file_path)
-#         out.write(img)  # Write the image frame to the video
-
-#     out.release()
-#     print(f"Video saved to {out_path}")
-
-
-def process_all_conditions_and_subconditions(data_path, conditions, subconditions, channel, movie_type, time_interval, skip_frames, vmax, frame_rate, min_frame, max_frame):
-    """
-    Wrapper function to create heatmaps and movies for all combinations of conditions and subconditions.
-
-    Args:
-    - data_path (str): Base directory where the images are stored.
-    - conditions (list of str): List of condition names.
-    - subconditions (list of str): List of subcondition names.
-    - channel (str): Channel specifying the fluorescence ('cy5' or 'gfp').
-    - time_interval (int): Time interval in seconds between frames for heatmap.
-    - skip_frames (int): Number of frames to skip between each processed frame for heatmap.
-    - vmax (int): Maximum value for normalization in the heatmap.
-    - frame_rate (int): Frame rate for the output video.
-    """
-
-
-    for condition in conditions:
+# generate movies from individual fluorescence intensity heatmaps
+def single_fluorescence_movies(data_path, conditions, subconditions, channel, time_intervals, min_frame, max_frame, vmax, skip_frames, frame_rate):
+    for i, condition in enumerate(conditions):
+        time_interval = time_intervals[i]
         for subcondition in subconditions:
             # Create heatmaps for each condition and subcondition
             fluorescence_heatmap(
@@ -448,27 +399,26 @@ def process_all_conditions_and_subconditions(data_path, conditions, subcondition
                 condition=condition,
                 subcondition=subcondition,
                 channel=channel,
-                time_interval=time_interval, 
+                time_interval=time_interval,
                 min_frame=min_frame,
                 max_frame=max_frame,
                 vmax=vmax,
                 skip_frames=skip_frames
             )
-            
+
             # Create annotated image movies for each condition and subcondition
             create_movies(
                 data_path=data_path,
                 condition=condition,
                 subcondition=subcondition,
                 channel=channel,
-                movie_type=movie_type,
+                movie_type='single',
                 frame_rate=frame_rate,
-                skip_frames=skip_frames,
                 max_frame=max_frame
             )
 
-
-def grid_heatmaps(data_path, conditions, subconditions, channel):
+# combine all the movies into a single movie (heatmaps in a grid)
+def grid_heatmaps(data_path, conditions, subconditions, channel, frame_rate):
     output_dir = os.path.join(data_path, f"grid_heatmaps_{channel}")
     os.makedirs(output_dir, exist_ok=True)
     
@@ -506,217 +456,14 @@ def grid_heatmaps(data_path, conditions, subconditions, channel):
         plt.savefig(output_path, bbox_inches='tight', pad_inches=0.1, dpi=250)
         plt.close(fig)
 
+    create_movies(data_path, condition=None, subcondition=None, channel=channel, movie_type='grid', frame_rate=frame_rate)
 
-# def create_movies_grid(data_path, channel, frame_rate=30):
-
-#     images_dir = os.path.join(data_path, f"grid_heatmaps_{channel}")
-
-#     image_files = natsorted(glob.glob(os.path.join(images_dir, "*.png")))
-
-#     if not image_files:
-#         print("No images found for video creation.")
-#         return
-
-#     # Get the resolution of the first image (assuming all images are the same size)
-#     first_image = cv2.imread(image_files[0])
-#     video_resolution = (first_image.shape[1], first_image.shape[0])  # Width x Height
-
-#     # Define the codec and create VideoWriter object
-#     fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-#     out_path = os.path.join(data_path, f"grid-{channel}.avi")
-#     out = cv2.VideoWriter(out_path, fourcc, frame_rate, video_resolution)
-
-#     for file_path in image_files:
-#         img = cv2.imread(file_path)
-#         out.write(img)  # Write the image frame to the video
-
-#     out.release()
-#     print(f"Video saved to {out_path}")
 
 
 ######################################### PIV #########################################
-    
 
-
-
-def plot_autocorrelation_values(data_path, condition, subcondition, frame_id, lambda_tau, results, fitted_values, intervector_distance_microns):
-    output_directory_dfs = os.path.join(data_path, condition, subcondition, "autocorrelation_plots")
-    os.makedirs(output_directory_dfs, exist_ok=True)
-
-    plt.figure(figsize=(10, 6))
-
-    x_values = np.arange(len(results)) * intervector_distance_microns * 1E6
-
-    plt.plot(x_values, results, label='Autocorrelation Values', marker='o', linestyle='-', markersize=5)
-    plt.plot(x_values, fitted_values, label='Fitted Exponential Decay', linestyle='--', color='red')
-    plt.axvline(x=lambda_tau, color='green', linestyle='-.', label=f'Correlation Length = {lambda_tau:.2f} µm')
-
-    plt.xlabel('Scaled Lag (µm)')
-    plt.ylabel('Autocorrelation')
-    plt.title(f'Autocorrelation Function and Fitted Exponential Decay (Frame {frame_id})')
-    plt.legend()
-    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
-    plt.ylim(0, 1.1)
-
-    plt.tight_layout()
-
-    filename = os.path.join(output_directory_dfs, f'autocorrelation_frame_{frame_id}.jpg')
-    plt.savefig(filename, dpi=200, format='jpg')
-    plt.close()
-
-
-
-def correlation_length(data_frame):
-    # Assuming the data_frame structure is as expected
-    v = data_frame.pivot(index='y [m]', columns='x [m]', values="velocity magnitude [m/s]").values
-    v = v - np.mean(v)
-    intervector_distance_microns = ((data_frame["y [m]"].max() - data_frame["y [m]"].min()) / v.shape[0]) 
-
-    full_product = np.fft.fft2(v) * np.conj(np.fft.fft2(v))
-    inverse = np.real(np.fft.ifft2(full_product))
-    normalized_inverse = inverse / inverse[0, 0]
-
-    r_values = v.shape[0] // 2
-    results = np.zeros(r_values)
-    for r in range(r_values):
-        autocorrelation_value = (normalized_inverse[r, r] + normalized_inverse[-r, -r]) / (v.shape[0] * v.shape[1])
-        results[r] = autocorrelation_value
-
-    results /= results[0]
-
-    def exponential_decay(x, A, B, C):
-        return A * np.exp(-x / B) + C
-
-    params, _ = curve_fit(exponential_decay, np.arange(len(results)), results, maxfev=5000)
-    A, B, C = params
-    fitted_values = exponential_decay(np.arange(r_values), A, B, C)
-
-    lambda_tau = -B * np.log((0.3 - C) / A) * intervector_distance_microns 
-
-    return lambda_tau, results, fitted_values, intervector_distance_microns
-
-
-
-def df_piv(data_path, condition, subcondition, min_frame=0, max_frame=None, skip_frames=1):
-    """
-    Processes Particle Image Velocimetry (PIV) data to create a DataFrame that combines mean values, 
-    power calculations, and pivot matrices for each feature.
-
-    Args:
-        data_path (str): Path to the directory containing PIV data files.
-        condition (str): Condition label for the data set.
-        subcondition (str): Subcondition label for the data set.
-        min_frame (int, optional): Minimum frame index to start processing (inclusive).
-        max_frame (int, optional): Maximum frame index to stop processing (exclusive).
-
-    Returns:
-        pandas.DataFrame: A DataFrame where each row corresponds to a frame, combining mean values, 
-        power calculations, and pivot matrices for each feature.
-    """
-
-    input_piv_data = os.path.join(data_path, condition, subcondition, "piv_data", "PIVlab_****.txt")
-    
-    # Using a for loop instead of list comprehension
-    dfs = []
-    for file in sorted(glob.glob(input_piv_data))[min_frame:max_frame:skip_frames]:
-        df = pd.read_csv(file, skiprows=2).fillna(0).rename(columns={
-            "magnitude [m/s]": "velocity magnitude [m/s]",
-            "simple shear [1/s]": "shear [1/s]",
-            "simple strain [1/s]": "strain [1/s]",
-            "Vector type [-]": "data type [-]"
-        })
-        dfs.append(df)
-
-    return dfs
-
-
-
-def process_piv_data(data_path, condition, subcondition, min_frame=0, max_frame=None, skip_frames=1, plot_autocorrelation=True):
-    """
-    Generates a time series pivot DataFrame from input data.
-
-    Parameters:
-    data_path (str): Path to the input data file.
-    condition (str): Primary condition for data filtering.
-    subcondition (str): Secondary condition for further data filtering.
-    min_frame (int, optional): Minimum frame to consider in the analysis. Defaults to 0.
-    max_frame (int, optional): Maximum frame to consider in the analysis. If None, considers all frames. Defaults to None.
-    plot_autocorrelation (bool, optional): Flag to plot autocorrelation. Defaults to True.
-    time_interval (int, optional): Time interval between frames, in seconds. Defaults to 3.
-
-    Returns:
-    tuple: A tuple containing two pandas DataFrames. The first is the mean values DataFrame and the second is the pivot matrices DataFrame.
-    """
-    # Creating output directories
-    output_directory_dfs = os.path.join(data_path, condition, subcondition, "dataframes_PIV")
-    os.makedirs(output_directory_dfs, exist_ok=True)
-
-
-    # Reading data frames
-    # Note: Assuming df_piv and correlation_length are pre-defined functions
-    data_frames = df_piv(data_path, condition, subcondition, min_frame, max_frame, skip_frames)
-
-
-    # Calculating mean values with valid vectors only
-    mean_values = []
-    for frame_id, data_frame in enumerate(data_frames):
-        lambda_tau, results, fitted_values, intervector_distance_microns = correlation_length(data_frame)
-        if plot_autocorrelation:
-            plot_autocorrelation_values(data_path, condition, subcondition, frame_id, lambda_tau * 1E6, results, fitted_values, intervector_distance_microns)
-        data_frame["correlation length [m]"] = lambda_tau
-        data_frame = data_frame[data_frame["data type [-]"] == 1]
-        mean_values.append(data_frame.mean(axis=0))
-
-    # Creating mean DataFrame
-    mean_data_frame = pd.DataFrame(mean_values)
-    mean_data_frame.reset_index(drop=False, inplace=True)
-    mean_data_frame.rename(columns={'index': 'frame'}, inplace=True)
-
-    # Calculate power and add to DataFrame
-    volume = 2.5E-9  # µl --> m^3
-    viscosity = 1E-3  # mPa*S
-    mean_data_frame["power [W]"] = volume * viscosity * (mean_data_frame["velocity magnitude [m/s]"]/mean_data_frame["correlation length [m]"])**2
-
-    # Renaming time column
-    # mean_data_frame.rename(columns={'frame': 'time [min]'}, inplace=True)
-
-    # Remove unnecessary columns for the pivot matrices
-    mean_data_frame = mean_data_frame.iloc[:, 5:]
-
-    # Scale time appropriately
-    mean_data_frame["frame"] = np.arange(len(mean_data_frame)) 
-
-
-    # Creating pivot matrices for each feature
-    features = data_frames[0].columns[:-1]
-    pivot_matrices = {feature: [] for feature in features}
-
-    for data_frame in data_frames:
-        temporary_dictionary = {feature: data_frame.pivot(index='y [m]', columns='x [m]', values=feature).values for feature in features}
-        for feature in features:
-            pivot_matrices[feature].append(temporary_dictionary[feature])
-
-    pivot_data_frame = pd.DataFrame(pivot_matrices)
-
-    # Adjusting column names in mean_data_frame
-    mean_data_frame.columns = [f"{column}_mean" if column != "frame" else column for column in mean_data_frame.columns]
-    
-    # Adding time column to pivot_data_frame
-    pivot_data_frame["frame"] = mean_data_frame["frame"].values
-    
-    # Save DataFrames to CSV
-    mean_df_output_path = os.path.join(output_directory_dfs, "mean_values.csv")
-    mean_data_frame.to_csv(mean_df_output_path, index=False)
-
-    pivot_df_output_path = os.path.join(output_directory_dfs, "features_matrices.csv")
-    pivot_data_frame.to_csv(pivot_df_output_path, index=False)
-
-    # return mean_data_frame, pivot_data_frame, average_values
-    return mean_data_frame, pivot_data_frame
-
-
-
-def convert_images(data_path, conditions, subconditions, max_frame=None, brightness_factor=1, contrast_factor=1, skip_frames=1):
+# convert pivlab images to the right size 
+def convert_images(data_path, conditions, subconditions, max_frame, brightness_factor=1, contrast_factor=1, skip_frames=1):
     """
     Converts, resizes, and adjusts the brightness and contrast of images for multiple conditions and 
     subconditions, then saves the processed images in new directories.
@@ -766,8 +513,179 @@ def convert_images(data_path, conditions, subconditions, max_frame=None, brightn
                 processed_image_path = os.path.join(output_dir, base_file_name)
                 image_contrasted.save(processed_image_path, format='TIFF', compression='tiff_lzw')
 
+# helper function to plot autocorrelation
+def plot_autocorrelation_values(data_path, condition, subcondition, frame_id, lambda_tau, results, fitted_values, intervector_distance_microns):
+    output_directory_dfs = os.path.join(data_path, condition, subcondition, "autocorrelation_plots")
+    os.makedirs(output_directory_dfs, exist_ok=True)
 
-def piv_heatmap(df, data_path, condition, subcondition, feature_limits, time_interval=3):
+    plt.figure(figsize=(10, 6))
+
+    x_values = np.arange(len(results)) * intervector_distance_microns * 1E6
+
+    plt.plot(x_values, results, label='Autocorrelation Values', marker='o', linestyle='-', markersize=5)
+    plt.plot(x_values, fitted_values, label='Fitted Exponential Decay', linestyle='--', color='red')
+    plt.axvline(x=lambda_tau, color='green', linestyle='-.', label=f'Correlation Length = {lambda_tau:.2f} µm')
+
+    plt.xlabel('Scaled Lag (µm)')
+    plt.ylabel('Autocorrelation')
+    plt.title(f'Autocorrelation Function and Fitted Exponential Decay (Frame {frame_id})')
+    plt.legend()
+    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+    plt.ylim(0, 1.1)
+
+    plt.tight_layout()
+
+    filename = os.path.join(output_directory_dfs, f'autocorrelation_frame_{frame_id}.jpg')
+    plt.savefig(filename, dpi=200, format='jpg')
+    plt.close()
+
+# helper function to calculate correlation length
+def correlation_length(data_frame):
+    # Assuming the data_frame structure is as expected
+    v = data_frame.pivot(index='y [m]', columns='x [m]', values="velocity magnitude [m/s]").values
+    v = v - np.mean(v)
+    intervector_distance_microns = ((data_frame["y [m]"].max() - data_frame["y [m]"].min()) / v.shape[0]) 
+
+    full_product = np.fft.fft2(v) * np.conj(np.fft.fft2(v))
+    inverse = np.real(np.fft.ifft2(full_product))
+    normalized_inverse = inverse / inverse[0, 0]
+
+    r_values = v.shape[0] // 2
+    results = np.zeros(r_values)
+    for r in range(r_values):
+        autocorrelation_value = (normalized_inverse[r, r] + normalized_inverse[-r, -r]) / (v.shape[0] * v.shape[1])
+        results[r] = autocorrelation_value
+
+    results /= results[0]
+
+    def exponential_decay(x, A, B, C):
+        return A * np.exp(-x / B) + C
+
+    params, _ = curve_fit(exponential_decay, np.arange(len(results)), results, maxfev=5000)
+    A, B, C = params
+    fitted_values = exponential_decay(np.arange(r_values), A, B, C)
+
+    lambda_tau = -B * np.log((0.3 - C) / A) * intervector_distance_microns 
+
+    return lambda_tau, results, fitted_values, intervector_distance_microns
+
+# load PIV data from PIVlab into dataframes
+def load_piv_data(data_path, condition, subcondition, min_frame=0, max_frame=None, skip_frames=1):
+    """
+    Processes Particle Image Velocimetry (PIV) data to create a DataFrame that combines mean values, 
+    power calculations, and pivot matrices for each feature.
+
+    Args:
+        data_path (str): Path to the directory containing PIV data files.
+        condition (str): Condition label for the data set.
+        subcondition (str): Subcondition label for the data set.
+        min_frame (int, optional): Minimum frame index to start processing (inclusive).
+        max_frame (int, optional): Maximum frame index to stop processing (exclusive).
+
+    Returns:
+        pandas.DataFrame: A DataFrame where each row corresponds to a frame, combining mean values, 
+        power calculations, and pivot matrices for each feature.
+    """
+
+    input_piv_data = os.path.join(data_path, condition, subcondition, "piv_data", "PIVlab_****.txt")
+    
+    # Using a for loop instead of list comprehension
+    dfs = []
+    for file in sorted(glob.glob(input_piv_data))[min_frame:max_frame:skip_frames]:
+        df = pd.read_csv(file, skiprows=2).fillna(0).rename(columns={
+            "magnitude [m/s]": "velocity magnitude [m/s]",
+            "simple shear [1/s]": "shear [1/s]",
+            "simple strain [1/s]": "strain [1/s]",
+            "Vector type [-]": "data type [-]"
+        })
+        dfs.append(df)
+
+    return dfs
+
+# store pivlab output as dataframes
+def generate_dataframes_from_piv_data(data_path, condition, subcondition, min_frame=0, max_frame=None, skip_frames=1, plot_autocorrelation=True):
+    """
+    Generates a time series pivot DataFrame from input data.
+
+    Parameters:
+    data_path (str): Path to the input data file.
+    condition (str): Primary condition for data filtering.
+    subcondition (str): Secondary condition for further data filtering.
+    min_frame (int, optional): Minimum frame to consider in the analysis. Defaults to 0.
+    max_frame (int, optional): Maximum frame to consider in the analysis. If None, considers all frames. Defaults to None.
+    plot_autocorrelation (bool, optional): Flag to plot autocorrelation. Defaults to True.
+    time_interval (int, optional): Time interval between frames, in seconds. Defaults to 3.
+
+    Returns:
+    tuple: A tuple containing two pandas DataFrames. The first is the mean values DataFrame and the second is the pivot matrices DataFrame.
+    """
+    # Creating output directories
+    output_directory_dfs = os.path.join(data_path, condition, subcondition, "dataframes_PIV")
+    os.makedirs(output_directory_dfs, exist_ok=True)
+
+    # Load PIV data
+    data_frames = load_piv_data(data_path, condition, subcondition, min_frame, max_frame, skip_frames)
+
+
+    # Calculating mean values with valid vectors only
+    mean_values = []
+    for frame_id, data_frame in enumerate(data_frames):
+        lambda_tau, results, fitted_values, intervector_distance_microns = correlation_length(data_frame)
+        if plot_autocorrelation:
+            plot_autocorrelation_values(data_path, condition, subcondition, frame_id, lambda_tau * 1E6, results, fitted_values, intervector_distance_microns)
+        data_frame["correlation length [m]"] = lambda_tau
+        data_frame = data_frame[data_frame["data type [-]"] == 1]
+        mean_values.append(data_frame.mean(axis=0))
+
+    # Creating mean DataFrame
+    mean_data_frame = pd.DataFrame(mean_values)
+    mean_data_frame.reset_index(drop=False, inplace=True)
+    mean_data_frame.rename(columns={'index': 'frame'}, inplace=True)
+
+    # Calculate power and add to DataFrame
+    volume = 2.5E-9  # µl --> m^3
+    viscosity = 1E-3  # mPa*S
+    mean_data_frame["power [W]"] = volume * viscosity * (mean_data_frame["velocity magnitude [m/s]"]/mean_data_frame["correlation length [m]"])**2
+
+    # Renaming time column
+    # mean_data_frame.rename(columns={'frame': 'time [min]'}, inplace=True)
+
+    # Remove unnecessary columns for the pivot matrices
+    # mean_data_frame = mean_data_frame.iloc[:, 5:]
+
+    # Scale time appropriately
+    mean_data_frame["frame"] = np.arange(len(mean_data_frame)) 
+
+
+    # Creating pivot matrices for each feature
+    features = data_frames[0].columns[:-1]
+    pivot_matrices = {feature: [] for feature in features}
+
+    for data_frame in data_frames:
+        temporary_dictionary = {feature: data_frame.pivot(index='y [m]', columns='x [m]', values=feature).values for feature in features}
+        for feature in features:
+            pivot_matrices[feature].append(temporary_dictionary[feature])
+
+    pivot_data_frame = pd.DataFrame(pivot_matrices)
+
+    # Adjusting column names in mean_data_frame
+    mean_data_frame.columns = [f"{column}_mean" if column != "frame" else column for column in mean_data_frame.columns]
+    
+    # Adding time column to pivot_data_frame
+    pivot_data_frame["frame"] = mean_data_frame["frame"].values
+    
+    # Save DataFrames to CSV
+    mean_df_output_path = os.path.join(output_directory_dfs, "mean_values.csv")
+    mean_data_frame.to_csv(mean_df_output_path, index=False)
+
+    pivot_df_output_path = os.path.join(output_directory_dfs, "features_matrices.csv")
+    pivot_data_frame.to_csv(pivot_df_output_path, index=False)
+
+    # return mean_data_frame, pivot_data_frame, average_values
+    return mean_data_frame, pivot_data_frame
+
+# plot the pivlab output as heatmaps
+def generate_heatmaps_from_dataframes(df, data_path, condition, subcondition, feature_limits, time_interval=3):
     """
     Generates and saves heatmaps for each feature specified in the feature_limits dictionary.
     Each heatmap is overlaid on a corresponding image and saved to a structured directory.
@@ -814,99 +732,39 @@ def piv_heatmap(df, data_path, condition, subcondition, feature_limits, time_int
             plt.savefig(output_directory_heatmaps, format='jpg', dpi=250)
             plt.close()
 
-
-def average_and_save(dataframes, save_path, filename):
-    """Average a list of DataFrames and save the result.
-    
-    Args:
-        dataframes (list of pd.DataFrame): DataFrames to average.
-        save_path (str): Directory path to save the averaged DataFrame.
-        filename (str): Filename for the saved CSV.
-    """
-    if not dataframes:
-        print("No DataFrames provided to average.")
-        return
-
-    average_df = sum(dataframes) / len(dataframes)
-    
-    os.makedirs(save_path, exist_ok=True)  # Ensure the directory exists
-    average_df.to_csv(os.path.join(save_path, filename))
-
-
-
-# def create_heatmap_movies(data_path, condition, subcondition, feature_limits, frame_rate=120, max_frame=None):
-#     """
-#     Creates heatmap video files from heatmap images stored in a specified directory.
-
-#     Args:
-#     - data_path (str): Base path where the heatmap images are stored.
-#     - condition (str): Condition under which the heatmap images are stored.
-#     - subcondition (str): Subcondition under which the heatmap images are stored.
-#     - feature_limits (dict): Dictionary specifying the limits for each feature.
-#     - frame_rate (int, optional): Frame rate for the output video. Defaults to 120.
-#     - max_frame (int, optional): Maximum number of frames to be included in the video. If None, all frames are included.
-
-#     The function reads heatmap images from the specified directory and creates a video file for each feature.
-#     """
-
-#     plots_dir = f"{data_path}/{condition}/{subcondition}/heatmaps_PIV/"
-#     for feature in feature_limits.keys():
-#         feature_name_for_file = feature.split()[0]
-#         heatmap_dir = os.path.join(data_path, condition, subcondition, "heatmaps_PIV", f"{feature.split()[0]}", f"{feature.split()[0]}_heatmap_****.jpg")
-#         heatmap_files = natsorted(glob.glob(heatmap_dir))
-
-#         if not heatmap_files:
-#             continue
-
-#         # Limit the number of files if max_frame is specified
-#         heatmap_files = heatmap_files[:max_frame] if max_frame is not None else heatmap_files
-
-#         # Get the resolution of the first image (assuming all images are the same size)
-#         first_image = cv2.imread(heatmap_files[0])
-#         video_resolution = (first_image.shape[1], first_image.shape[0])  # Width x Height
-
-#         # Define the codec and create VideoWriter object
-#         fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-#         out = cv2.VideoWriter(f'{plots_dir}{feature_name_for_file}.avi', fourcc, frame_rate, video_resolution)
-
-#         for file in heatmap_files:
-#             img = cv2.imread(file)
-#             out.write(img)  # Write the image as is, without resizing
-
-#         out.release()
-
-
-
-def process_all_conditions_piv(data_path, conditions, subconditions, feature_limits, min_frame=0, max_frame=None, skip_frames=1, plot_autocorrelation=True, frame_rate=120, time_interval=3):
+# turn heatmaps into movies 
+def piv_heatmaps(data_path, conditions, subconditions, feature_limits, time_intervals, min_frame=0, max_frame=None, skip_frames=1, plot_autocorrelation=True, frame_rate=120):
     """Process PIV data for all conditions and subconditions, then average and save results.
-    
+
     Args:
         data_path (str): Base directory for PIV data and output.
         conditions (list): List of conditions.
         subconditions (list): List of subconditions.
-        **kwargs: Additional keyword arguments to pass to the process_piv_data function.
+        feature_limits (dict): Dictionary of feature limits.
+        time_intervals (list): List of time intervals matching the conditions.
+        min_frame (int, optional): Minimum frame number to process. Defaults to 0.
+        max_frame (int, optional): Maximum frame number to process. Defaults to None.
+        skip_frames (int, optional): Number of frames to skip between processed frames. Defaults to 1.
+        plot_autocorrelation (bool, optional): Whether to plot autocorrelation. Defaults to True.
+        frame_rate (int, optional): Frame rate for the movies. Defaults to 120.
     """
-
-    time_interval = time_interval * skip_frames * 2
-    
-    for condition in conditions:
+    for i, condition in enumerate(conditions):
+        time_interval = time_intervals[i] * skip_frames
         results = []
         for subcondition in subconditions:
-            m, p = process_piv_data(data_path, condition, subcondition, min_frame, max_frame, skip_frames, plot_autocorrelation)
+            m, p = generate_dataframes_from_piv_data(data_path, condition, subcondition, min_frame, max_frame, skip_frames, plot_autocorrelation)
             results.append(m)
-
-            piv_heatmap(p, data_path, condition, subcondition, feature_limits, time_interval)
-
-            # create_heatmap_movies(data_path, condition, subcondition, feature_limits, frame_rate=120/2, max_frame=None)
-            create_movies(data_path, condition, subcondition, channel=None, movie_type='heatmap', feature_limits=feature_limits, frame_rate=frame_rate, max_frame=max_frame)
-
+            generate_heatmaps_from_dataframes(p, data_path, condition, subcondition, feature_limits, time_interval)
+            create_movies(data_path, condition, subcondition, channel=None, movie_type='PIV', feature_limits=feature_limits, frame_rate=frame_rate, max_frame=max_frame)
 
         # Averaging and saving the results for the current condition
         save_path = os.path.join(data_path, condition, 'averaged')
-        average_and_save(results, save_path, f"{condition}_average.csv")
+        average_df = sum(results) / len(results)
+        
+        os.makedirs(save_path, exist_ok=True)  # Ensure the directory exists
+        average_df.to_csv(os.path.join(save_path, f"{condition}_average.csv"))
 
-
-
+# generate PCA from pivlab output
 def plot_pca(dfs, data_paths, conditions, subconditions, features):
     # Perform PCA and Plot
     plt.figure(figsize=(10, 6))
@@ -944,8 +802,7 @@ def plot_pca(dfs, data_paths, conditions, subconditions, features):
     plt.savefig(output_dir_pca, format='jpg', dpi=250)
     plt.close()
 
-
-
+# plot features and PCA per conditions per subconditions
 def plot_features(data_paths, conditions, subconditions, features, time_intervals, sigma=2, min_frame=None, max_frame=None):
     """
     Plots each feature with respect to frame for multiple DataFrames.
@@ -1010,9 +867,7 @@ def plot_features(data_paths, conditions, subconditions, features, time_interval
         plt.savefig(output_directory_plots, format='jpg', dpi=400)
         plt.close()
 
-
-
-
+# plot features and PCA averaged over subconditions
 def plot_features_averages(data_paths, conditions, subconditions, features, time_intervals, sigma=2, min_frame=None, max_frame=None):
     """
     Plots each feature with respect to frame for multiple DataFrames.
@@ -1076,3 +931,5 @@ def plot_features_averages(data_paths, conditions, subconditions, features, time
         plt.legend()
         plt.savefig(output_directory_plots, format='jpg', dpi=400)
         plt.close()
+
+
