@@ -804,62 +804,36 @@ def plot_pca(dfs, data_paths, conditions, subconditions, features):
     plt.savefig(output_dir_pca, format='jpg', dpi=250)
     plt.close()
 
-# plot features and PCA per conditions per subconditions
 def plot_features(data_paths, conditions, subconditions, features, time_intervals, sigma=2, min_frame=None, max_frame=None):
-    """
-    Plots each feature with respect to frame for multiple DataFrames.
-
-    Parameters:
-    - dfs (list of DataFrame): List of DataFrames to plot.
-    - data_paths (list of str): List of base paths for saving the plots, corresponding to each DataFrame.
-    - conditions (list of str): List of condition names corresponding to each DataFrame.
-    - subconditions (list of str): List of subcondition names corresponding to each DataFrame.
-    - time_intervals (list of int): List of time intervals between frames, used for x-axis scaling, corresponding to each DataFrame.
-    - sigma (int, optional): Standard deviation for Gaussian filter applied to the data. Default is 2.
-
-    The function creates a plot for each feature in the DataFrame(s), combining data from all provided
-    DataFrames. Plots are saved as JPEG images in the specified data_paths.
-    """
-    
-    # load dataframes
-    dfs = []  # Initialize an empty list
+    dfs = []
 
     for data_path, condition, subcondition, time_interval in zip(data_paths, conditions, subconditions, time_intervals):
-        # Construct the file path
         file_path = os.path.join(data_path, condition, subcondition, "dataframes_PIV", "mean_values.csv")
-        # Read the CSV file and append the DataFrame to the list
         df = pd.read_csv(file_path)
 
-        # apply Gaussian filter to mean_data_frame
         df.iloc[:, :] = df.iloc[:, :].apply(lambda x: gaussian_filter(x, sigma=sigma))
 
-        # replace "frame" with the proper time
-        df = df.rename(columns={"frame":"time [min]"})
-        df["time [min]"] = df["time [min]"] * time_interval / 60
+        df = df.rename(columns={"frame": "time [min]"})
+        df["time [min]"] = (df["time [min]"] - df["time [min]"].min()) * time_interval / 60
 
-        # add Work (Joules) and CL & velocity in microns
-        df = df.rename(columns={"data type [-]_mean" : "work [J]", "correlation length [m]_mean" : "correlation length [um]", "velocity magnitude [m/s]_mean" : "velocity magnitude [um/s]"})
+        df = df.rename(columns={"data type [-]_mean": "work [J]", "correlation length [m]_mean": "correlation length [um]", "velocity magnitude [m/s]_mean": "velocity magnitude [um/s]"})
         df["work [J]"] = df["power [W]_mean"].cumsum()
-        df["correlation length [um]" ] = df["correlation length [um]"] * 1e6
+        df["correlation length [um]"] = df["correlation length [um]"] * 1e6
         df["velocity magnitude [um/s]"] = df["velocity magnitude [um/s]"] * 1e6
 
-        # min and max frames
-        df = df.iloc[min_frame:max_frame,:]
+        df = df.iloc[min_frame:max_frame, :]
 
         dfs.append(df)
 
-    # generate PCA
     plot_pca(dfs, data_paths, conditions, subconditions, features)
 
-    # plot each feature
     for feature in dfs[0].columns[:-1]:
         plt.figure(figsize=(10, 6))
 
         for df, data_path, condition, subcondition, time_interval in zip(dfs, data_paths, conditions, subconditions, time_intervals):
             output_directory_plots = os.path.join(data_path, condition, subcondition, "plots_PIV", f"{feature.split()[0]}_plot.jpg")
             os.makedirs(os.path.dirname(output_directory_plots), exist_ok=True)
-            # filtered_values = gaussian_filter(df[feature], sigma=sigma)
-            plt.plot(df["time [min]"] , df[feature], marker='o', linestyle='-', markersize=1, linewidth=1, label=f'{condition}_{subcondition}')
+            plt.plot(df["time [min]"], df[feature], marker='o', linestyle='-', markersize=1, linewidth=1, label=f'{condition}_{subcondition}')
 
         plt.xlabel('Time (minutes)')
         plt.ylabel(feature)
@@ -886,45 +860,35 @@ def plot_features_averages(data_paths, conditions, subconditions, features, time
     DataFrames. Plots are saved as JPEG images in the specified data_paths.
     """
     
-    # load dataframes
-    dfs = []  # Initialize an empty list
+    dfs = []
 
     for data_path, condition, subcondition, time_interval in zip(data_paths, conditions, subconditions, time_intervals):
-        # Construct the file path
         file_path = os.path.join(data_path, condition, subcondition, f"{condition}_average.csv")
-        # Read the CSV file and append the DataFrame to the list
         df = pd.read_csv(file_path)
 
-        # apply Gaussian filter to mean_data_frame
         df.iloc[:, :] = df.iloc[:, :].apply(lambda x: gaussian_filter(x, sigma=sigma))
 
-        # replace "frame" with the proper time
-        df = df.rename(columns={"frame":"time [min]"})
-        df["time [min]"] = df["time [min]"] * time_interval / 60
+        df = df.rename(columns={"frame": "time [min]"})
+        df["time [min]"] = (df["time [min]"] - df["time [min]"].min()) * time_interval / 60
 
-        # add Work (Joules) and CL & velocity in microns
-        df = df.rename(columns={"data type [-]_mean" : "work [J]", "correlation length [m]_mean" : "correlation length [um]", "velocity magnitude [m/s]_mean" : "velocity magnitude [um/s]"})
+        df = df.rename(columns={"data type [-]_mean": "work [J]", "correlation length [m]_mean": "correlation length [um]", "velocity magnitude [m/s]_mean": "velocity magnitude [um/s]"})
         df["work [J]"] = df["power [W]_mean"].cumsum()
-        df["correlation length [um]" ] = df["correlation length [um]"] * 1e6
+        df["correlation length [um]"] = df["correlation length [um]"] * 1e6
         df["velocity magnitude [um/s]"] = df["velocity magnitude [um/s]"] * 1e6
 
-        # min and max frames
-        df = df.iloc[min_frame:max_frame,:]
+        df = df.iloc[min_frame:max_frame, :]
 
         dfs.append(df)
 
-    # generate PCA
     plot_pca(dfs, data_paths, conditions, subconditions, features)
 
-    # plot each feature
     for feature in dfs[0].columns[:-1]:
         plt.figure(figsize=(10, 6))
 
         for df, data_path, condition, subcondition, time_interval in zip(dfs, data_paths, conditions, subconditions, time_intervals):
             output_directory_plots = os.path.join(data_path, condition, subcondition, "plots_PIV", f"{feature.split()[0]}_plot.jpg")
             os.makedirs(os.path.dirname(output_directory_plots), exist_ok=True)
-            # filtered_values = gaussian_filter(df[feature], sigma=sigma)
-            plt.plot(df["time [min]"] , df[feature], marker='o', linestyle='-', markersize=1, linewidth=1, label=f'{condition}_{subcondition}')
+            plt.plot(df["time [min]"], df[feature], marker='o', linestyle='-', markersize=1, linewidth=1, label=f'{condition}_{subcondition}')
 
         plt.xlabel('Time (minutes)')
         plt.ylabel(feature)
@@ -935,3 +899,51 @@ def plot_features_averages(data_paths, conditions, subconditions, features, time
         plt.close()
 
 
+def plot_PIV_features(data_path, conditions, subconditions, features_pca, time_intervals, sigma=10, min_frame=0, max_frame=None):
+    # Plot features for individual subconditions
+    for condition in conditions:
+        data_paths = [data_path] * len(subconditions)
+        condition_list = [condition] * len(subconditions)
+        plot_features(
+            data_paths,
+            condition_list,
+            subconditions,
+            features_pca,
+            time_intervals=[time_intervals[conditions.index(condition)]] * len(subconditions),
+            sigma=sigma,
+            min_frame=min_frame,
+            max_frame=max_frame,
+        )
+
+    # Plot features for all subconditions together
+    data_paths = [data_path] * len(conditions) * len(subconditions)
+    condition_list = [condition for condition in conditions for _ in range(len(subconditions))]
+    subcondition_list = subconditions * len(conditions)
+    time_interval_list = [time_interval for time_interval in time_intervals for _ in range(len(subconditions))]
+
+    plot_features(
+        data_paths,
+        condition_list,
+        subcondition_list,
+        features_pca,
+        time_intervals=time_interval_list,
+        sigma=sigma,
+        min_frame=min_frame,
+        max_frame=max_frame,
+    )
+
+    # Plot features for averaged subconditions
+    data_paths = [data_path] * len(conditions)
+    subcondition_list = ['averaged'] * len(conditions)
+    time_interval_list = time_intervals
+
+    plot_features_averages(
+        data_paths,
+        conditions,
+        subcondition_list,
+        features_pca,
+        time_intervals=time_interval_list,
+        sigma=sigma,
+        min_frame=min_frame,
+        max_frame=max_frame,
+    )
