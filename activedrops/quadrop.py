@@ -733,7 +733,7 @@ def generate_heatmaps_from_dataframes(df, data_path, condition, subcondition, fe
             plt.close()
 
 # turn heatmaps into movies 
-def piv_heatmaps(data_path, conditions, subconditions, feature_limits, time_intervals, min_frame=0, max_frame=None, skip_frames=1, plot_autocorrelation=True, frame_rate=120):
+def process_piv_data(data_path, conditions, subconditions, feature_limits, time_intervals, min_frame=0, max_frame=None, skip_frames=1, plot_autocorrelation=True, frame_rate=120, heatmaps=True):
     """Process PIV data for all conditions and subconditions, then average and save results.
 
     Args:
@@ -754,8 +754,10 @@ def piv_heatmaps(data_path, conditions, subconditions, feature_limits, time_inte
         for subcondition in subconditions:
             m, p = generate_dataframes_from_piv_data(data_path, condition, subcondition, min_frame, max_frame, skip_frames, plot_autocorrelation)
             results.append(m)
-            generate_heatmaps_from_dataframes(p, data_path, condition, subcondition, feature_limits, time_interval)
-            create_movies(data_path, condition, subcondition, channel=None, movie_type='PIV', feature_limits=feature_limits, frame_rate=frame_rate, max_frame=max_frame)
+
+            if heatmaps == True:
+                generate_heatmaps_from_dataframes(p, data_path, condition, subcondition, feature_limits, time_interval)
+                create_movies(data_path, condition, subcondition, channel=None, movie_type='PIV', feature_limits=feature_limits, frame_rate=frame_rate, max_frame=max_frame)
 
         # Averaging and saving the results for the current condition
         save_path = os.path.join(data_path, condition, 'averaged')
