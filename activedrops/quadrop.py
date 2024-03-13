@@ -418,7 +418,7 @@ def single_fluorescence_movies(data_path, conditions, subconditions, channel, ti
             )
 
 # combine all the movies into a single movie (heatmaps in a grid)
-def grid_heatmaps(data_path, conditions, subconditions, channel, frame_rate):
+def grid_heatmaps(data_path, conditions, subconditions, channel, frame_rate, figsize):
     output_dir = os.path.join(data_path, f"grid_heatmaps_{channel}")
     os.makedirs(output_dir, exist_ok=True)
     
@@ -435,7 +435,7 @@ def grid_heatmaps(data_path, conditions, subconditions, channel, frame_rate):
     
     # Iterate over the number of unique frames
     for frame_idx in range(0, num_frames):
-        fig, ax = plt.subplots(len(subconditions), len(conditions), figsize=(len(subconditions)*4, len(conditions)*4))
+        fig, ax = plt.subplots(len(subconditions), len(conditions), figsize=figsize)
         
         for i, subcondition in enumerate(subconditions):
             for j, condition in enumerate(conditions):
