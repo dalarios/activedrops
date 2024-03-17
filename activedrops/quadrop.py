@@ -3,6 +3,8 @@ import os
 import re
 import sys
 import glob
+import shutil
+
 
 # Import data processing libraries
 import pandas as pd
@@ -89,6 +91,57 @@ def set_plotting_style():
 
 
 ######################################### raw data processing #########################################
+    
+# optional
+def reorgTiffsToOriginal(data_path, conditions, subconditions):
+    """
+    Args:
+        data_path (_type_): _description_
+        conditions (_type_): _description_
+        subconditions (_type_): _description_
+        
+        
+    Activate when you have your subconditions inside the conditions folder. 
+    This function renames the subconditions as PosX and moves the raw data do "original" folder.
+    """
+    
+    
+    for condition in conditions:
+        # Get the actual subconditions in the directory
+        actual_subconditions = [name for name in os.listdir(os.path.join(data_path, condition)) if os.path.isdir(os.path.join(data_path, condition, name))]
+        
+        # Rename the actual subconditions to match the subconditions in your list
+        for i, actual_subcondition in enumerate(sorted(actual_subconditions)):
+            os.rename(os.path.join(data_path, condition, actual_subcondition), os.path.join(data_path, condition, subconditions[i]))
+        
+        for subcondition in subconditions:
+            # Construct the path to the subcondition directory
+            subcondition_path = os.path.join(data_path, condition, subcondition)
+            
+            # Create the path for the "original" directory within the subcondition directory
+            original_dir_path = os.path.join(subcondition_path, "original")
+            
+            # Always create the "original" directory
+            os.makedirs(original_dir_path, exist_ok=True)
+            
+            # Iterate over all files in the subcondition directory
+            for filename in os.listdir(subcondition_path):
+                # Check if the file is a .tif file
+                if filename.endswith(".tif"):
+                    # Construct the full path to the file
+                    file_path = os.path.join(subcondition_path, filename)
+                    
+                    # Construct the path to move the file to
+                    destination_path = os.path.join(original_dir_path, filename)
+                    
+                    # Move the file to the "original" directory
+                    shutil.move(file_path, destination_path)
+            print(f"Moved .tif files from {subcondition_path} to {original_dir_path}")
+
+
+# reorgTiffsToOriginal(data_path, conditions, subconditions)
+
+
 
 # plot the fluorescence over time of imaging data
 def plot_fluorescence_vs_time(data_path, conditions, subconditions, channel, time_intervals, min_frame, max_frame, skip_frames=1, log_scale=False, timescale="h"):
