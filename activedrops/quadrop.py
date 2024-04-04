@@ -143,11 +143,19 @@ def reorgTiffsToOriginal(data_path, conditions, subconditions):
 
 
 
-# plot the fluorescence over time of imaging data
-def plot_fluorescence_vs_time(data_path, conditions, subconditions, channel, time_intervals, min_frame, max_frame, skip_frames=1, log_scale=False, timescale="h"):
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+import glob
+import imageio
+from scipy.ndimage import gaussian_filter1d
+
+def plot_fluorescence(data_path, conditions, subconditions, channel, time_intervals, min_frame, max_frame,
+                      skip_frames=1, log_scale=False, timescale="h", averaged=False):
     """
-    Computes and plots the mean fluorescence intensity over time for a given set of images across multiple conditions and subconditions,
-    with visual grouping by condition and improved legend. Time is displayed based on the specified timescale and time interval for each condition.
+    Computes and plots the fluorescence intensity over time for a given set of images across multiple conditions and subconditions.
+    Can also average the subconditions within each condition if 'averaged' is True, after converting A.U. to µg/ml.
+    Time is displayed based on the specified timescale and time interval for each condition.
     The final plot, including all curves, is saved as a JPG file.
 
     Parameters:
@@ -161,14 +169,16 @@ def plot_fluorescence_vs_time(data_path, conditions, subconditions, channel, tim
     - skip_frames (int): Number of frames to skip between plotted points.
     - log_scale (bool): Whether to plot the y-axis in log scale.
     - timescale (str): The unit of time to display on the x-axis ('h' for hours, 'min' for minutes).
+    - averaged (bool): Whether to average the fluorescence intensity across subconditions.
     """
     plt.figure(figsize=(12, 8))
-
-    # Use a colormap to generate distinct colors for each condition
     cmap = plt.get_cmap('inferno')
     condition_colors = cmap(np.linspace(0, 1, len(conditions) + 1)[:-1])
 
-    # Determine conversion factor based on the selected timescale
+    # Line equation to convert A.U. to concentration
+    line_slope = 0.0004203353275461814
+    line_intercept = 0.0015873751623883166
+
     if timescale == "h":
         time_conversion_factor = 60 * 60  # minutes to hours
         x_label = "Time (hours)"
@@ -178,95 +188,11 @@ def plot_fluorescence_vs_time(data_path, conditions, subconditions, channel, tim
     else:
         raise ValueError("Invalid timescale. Choose either 'h' for hours or 'min' for minutes.")
 
-    # Check if the number of time intervals matches the number of conditions
-    if len(time_intervals) != len(conditions):
-        raise ValueError("The number of time intervals must match the number of conditions.")
-
-    # Generate shades for subconditions within each condition
-    for condition_idx, (condition, time_interval) in enumerate(zip(conditions, time_intervals)):
-        base_color = condition_colors[condition_idx]
-        
-        for sub_idx, subcondition in enumerate(subconditions):
-            directory_path = os.path.join(data_path, condition, subcondition, "original")
-            current_time_interval = time_interval
-            
-            if channel == "cy5":
-                image_files = sorted(glob.glob(os.path.join(directory_path, "*cy5-4x_000.tif")))[min_frame:max_frame:skip_frames]
-            elif channel == "gfp":
-                image_files = sorted(glob.glob(os.path.join(directory_path, "*gfp-4x_000.tif")))[min_frame:max_frame:skip_frames]
-            
-            intensities = []
-            frames = []
-            
-            for i, image_file in enumerate(image_files):
-                img = imageio.imread(image_file) / 2**16
-                mean_intensity = np.mean(img[750:1250, 750:1250])
-                frames.append(i * skip_frames)
-                intensities.append(mean_intensity)
-            
-            results_df = pd.DataFrame({
-                "frame": frames,
-                "mean_intensity": intensities - np.min(intensities)
-            })
-            
-            smoothed_intensities = gaussian_filter1d(results_df["mean_intensity"], sigma=1)
-            
-            alpha = 0.3 + (sub_idx / len(subconditions)) * 0.7
-            color = base_color * np.array([1, 1, 1, alpha])
-
-            plt.plot(results_df["frame"] * current_time_interval / time_conversion_factor, smoothed_intensities, color=color, marker='o', linestyle='-', label=f"{condition} - {subcondition}")
-
-    plt.title(f"Fluorescence expression over time - {channel}")
-    plt.xlabel(x_label)
-    plt.ylabel("Normalized Mean Fluorescence Intensity (A.U.)")
-    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
-    plt.legend()
-
-    if log_scale:
-        plt.yscale('log')
-
-    output_path = os.path.join(data_path, f"{channel}_mean_fluorescence_vs_time.jpg")
-    plt.savefig(output_path, format='jpg', dpi=200)
-    plt.show()
-
-# plot the average fluorescence over time of imaging data
-def plot_average_fluorescence_vs_time(data_path, conditions, subconditions, channel, time_intervals, min_frame, max_frame, skip_frames=1, log_scale=False, timescale='h'):
-    """
-    Computes and plots the mean fluorescence intensity over time for a given set of images across multiple conditions,
-    averaging the subconditions within each condition. Time is displayed based on the specified timescale and time interval for each condition.
-    The final plot, including all curves, is saved as a JPG file.
-
-    Parameters:
-    - data_path (str): Base path where the images are stored.
-    - conditions (list of str): List of condition names.
-    - subconditions (list of str): List of subcondition names.
-    - channel (str): Channel name.
-    - time_intervals (list of int): List of time intervals between frames in minutes, one for each condition.
-    - min_frame (int): Minimum frame number to process.
-    - max_frame (int): Maximum frame number to process.
-    - skip_frames (int): Number of frames to skip between plotted points.
-    - log_scale (bool): Whether to plot the y-axis in log scale.
-    - timescale (str): The unit of time to display on the x-axis ('h' for hours, 'min' for minutes).
-    """
-    plt.figure(figsize=(12, 8))
-    cmap = plt.get_cmap('inferno')
-    condition_colors = cmap(np.linspace(0, 1, len(conditions) + 1)[:-1])
-
-    if timescale == "h":
-        time_conversion_factor = 60 * 60  # minutes to hours
-        x_label = "Time (hours)"
-    elif timescale == "min":
-        time_conversion_factor = 60  # minutes to minutes
-        x_label = "Time (minutes)"
-    else:
-        raise ValueError("Invalid timescale. Choose either 'h' for hours or 'min' for minutes.")
-
-    # Check if the number of time intervals matches the number of conditions
     if len(time_intervals) != len(conditions):
         raise ValueError("The number of time intervals must match the number of conditions.")
 
     for condition_idx, (condition, time_interval) in enumerate(zip(conditions, time_intervals)):
-        condition_intensities = []
+        all_concentrations = []  # List to hold all concentrations for averaging
         frames = []
 
         for sub_idx, subcondition in enumerate(subconditions):
@@ -281,38 +207,42 @@ def plot_average_fluorescence_vs_time(data_path, conditions, subconditions, chan
             intensities = []
             for i, image_file in enumerate(image_files):
                 img = imageio.imread(image_file) / 2**16  # Normalize to 16-bit
-                mean_intensity = np.mean(img[750:1250, 750:1250])
-                if sub_idx == 0:
-                    frames.append(i * skip_frames)  # Adjust frames slightly for visual separation
+                mean_intensity = np.mean(img) 
                 intensities.append(mean_intensity)
 
-            condition_intensities.append(intensities)
+            # Convert A.U. to concentration using the line equation
+            concentrations = [(intensity - line_intercept) / line_slope for intensity in intensities]
 
-        # Average the intensities across subconditions for each condition
-        avg_intensities = np.mean(condition_intensities, axis=0)
-        results_df = pd.DataFrame({
-            "frame": frames,
-            "mean_intensity": avg_intensities - np.min(avg_intensities)
-        })
+            if averaged:
+                all_concentrations.append(concentrations)
+            else:
+                if sub_idx == 0:  # Initialize frames for plotting only if not averaging
+                    frames = [i * skip_frames for i in range(len(concentrations))]
 
-        # Apply Gaussian filter to mean_intensity for smoothing
-        smoothed_intensities = gaussian_filter1d(results_df["mean_intensity"], sigma=1)  # Sigma controls the smoothing strength
+                alpha = 0.3 + (sub_idx / len(subconditions)) * 0.7
+                color = condition_colors[condition_idx] * np.array([1, 1, 1, alpha])
+                plt.plot(frames, concentrations, color=color, marker='o', linestyle='-', label=f"{condition} - {subcondition}")
 
-        color = condition_colors[condition_idx]
-        plt.plot(results_df["frame"] * current_time_interval / time_conversion_factor, smoothed_intensities, color=color, marker='o', linestyle='-', label=condition)
+        if averaged:
+            # Perform averaging here on concentrations, not on A.U.
+            avg_concentrations = np.mean(all_concentrations, axis=0)
+            frames = [i * skip_frames for i in range(len(avg_concentrations))]  # Frames for averaged data
+            plt.plot(frames, avg_concentrations, color=condition_colors[condition_idx], marker='o', linestyle='-', label=condition)
 
     plt.title(f"Fluorescence expression over time - {channel}")
     plt.xlabel(x_label)
-    plt.ylabel("Normalized Mean Fluorescence Intensity (A.U.)")
+    plt.ylabel("Protein Concentration (µg/ml)")
     plt.grid(True, which='both', linestyle='--', linewidth=0.5)
     plt.legend()
 
     if log_scale:
         plt.yscale('log')
 
-    output_path = os.path.join(data_path, f"{channel}_averaged_fluorescence_vs_time.jpg")
+    output_path = os.path.join(data_path, f"{channel}_{'averaged' if averaged else 'mean'}_fluorescence_vs_time.jpg")
     plt.savefig(output_path, format='jpg', dpi=200)
     plt.show()
+
+
 
 # plot the raw image as heatmap of fluorescence intensity
 def fluorescence_heatmap(data_path, condition, subcondition, channel, time_interval, min_frame, max_frame, vmax, skip_frames=1):
@@ -351,7 +281,7 @@ def fluorescence_heatmap(data_path, condition, subcondition, channel, time_inter
         intensity_matrix = imageio.imread(image_file) / 2**16  # Normalize the 16-bit image to 1.0
 
         # Plot the heatmap
-        fig, ax = plt.subplots(figsize=(8, 8))
+        fig, ax = plt.subplots(figsize=(12, 12))
         im = ax.imshow(intensity_matrix, cmap='gray', interpolation='nearest', extent=[-2762/2, 2762/2, -2762/2, 2762/2], vmin=0, vmax=vmax)
         
         plt.colorbar(im, ax=ax, label='Normalized Fluorescence Intensity (A.U.)')
