@@ -176,7 +176,7 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
 
     # Line equation to convert A.U. to concentration
     line_slope = 0.0004203353275461814
-    line_intercept = 0.0015873751623883166
+    line_intercept = 0.0017938608051425338
 
     # Define conversion factor based on the timescale
     if timescale == "h":
@@ -272,17 +272,23 @@ def fluorescence_heatmap(data_path, condition, subcondition, channel, time_inter
     elif channel == "gfp":
         image_files = sorted(glob.glob(os.path.join(input_directory_path, "*gfp-4x_000.tif")))[min_frame:max_frame:skip_frames]
             
+    # Calibration curve parameters
+    line_slope = 0.0004203353275461814
+    line_intercept = 0.0015873751623883166
     
     # Loop through each image file and create a heatmap
     for i, image_file in enumerate(image_files, start=min_frame):
         # Read the image into a numpy array
         intensity_matrix = imageio.imread(image_file) / 2**16  # Normalize the 16-bit image to 1.0
 
+        # Convert intensity values to protein concentration using the calibration curve
+        concentration_matrix = (intensity_matrix - line_intercept) / line_slope
+
         # Plot the heatmap
         fig, ax = plt.subplots(figsize=(12, 12))
-        im = ax.imshow(intensity_matrix, cmap='gray', interpolation='nearest', extent=[-2762/2, 2762/2, -2762/2, 2762/2], vmin=0, vmax=vmax)
+        im = ax.imshow(concentration_matrix, cmap='gray', interpolation='nearest', extent=[-2762/2, 2762/2, -2762/2, 2762/2], vmin=0, vmax=vmax)
         
-        plt.colorbar(im, ax=ax, label='Normalized Fluorescence Intensity (A.U.)')
+        plt.colorbar(im, ax=ax, label='Protein concentration (ng/µl)')
         plt.title(f"Time (min): {(i - min_frame) * time_interval * skip_frames / 60:.2f}. \n{condition} - {subcondition} - {channel}", fontsize=14, )
         plt.xlabel('x [µm]')
         plt.ylabel('y [µm]')
@@ -292,6 +298,7 @@ def fluorescence_heatmap(data_path, condition, subcondition, channel, time_inter
         heatmap_path = os.path.join(output_directory_path, heatmap_filename)
         plt.savefig(heatmap_path, bbox_inches='tight', pad_inches=0.1, dpi=300)
         plt.close(fig)
+
 
 # create a movie from the processed images -- general function
 def create_movies(data_path, condition, subcondition, channel, movie_type, frame_rate, feature_limits=None, max_frame=None):
