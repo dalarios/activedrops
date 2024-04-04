@@ -142,7 +142,6 @@ def reorgTiffsToOriginal(data_path, conditions, subconditions):
 # reorgTiffsToOriginal(data_path, conditions, subconditions)
 
 
-
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -163,7 +162,7 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
     - conditions (list of str): List of condition names.
     - subconditions (list of str): List of subcondition names.
     - channel (str): Channel name.
-    - time_intervals (list of int): List of time intervals between frames in minutes, one for each condition.
+    - time_intervals (list of int): List of time intervals between frames in seconds, one for each condition.
     - min_frame (int): Minimum frame number to process.
     - max_frame (int): Maximum frame number to process.
     - skip_frames (int): Number of frames to skip between plotted points.
@@ -179,11 +178,12 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
     line_slope = 0.0004203353275461814
     line_intercept = 0.0015873751623883166
 
+    # Define conversion factor based on the timescale
     if timescale == "h":
-        time_conversion_factor = 60 * 60  # minutes to hours
+        time_conversion_factor = 1 / 3600  # Convert seconds to hours
         x_label = "Time (hours)"
     elif timescale == "min":
-        time_conversion_factor = 60  # minutes to minutes (no change)
+        time_conversion_factor = 1 / 60  # Convert seconds to minutes
         x_label = "Time (minutes)"
     else:
         raise ValueError("Invalid timescale. Choose either 'h' for hours or 'min' for minutes.")
@@ -193,11 +193,10 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
 
     for condition_idx, (condition, time_interval) in enumerate(zip(conditions, time_intervals)):
         all_concentrations = []  # List to hold all concentrations for averaging
-        frames = []
 
         for sub_idx, subcondition in enumerate(subconditions):
             directory_path = os.path.join(data_path, condition, subcondition, "original")
-            current_time_interval = time_interval
+            current_time_interval = time_interval * time_conversion_factor  # Convert time_interval to the correct timescale
 
             if channel == "cy5":
                 image_files = sorted(glob.glob(os.path.join(directory_path, "*cy5-4x_000.tif")))[min_frame:max_frame:skip_frames]
@@ -207,7 +206,7 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
             intensities = []
             for i, image_file in enumerate(image_files):
                 img = imageio.imread(image_file) / 2**16  # Normalize to 16-bit
-                mean_intensity = np.mean(img) 
+                mean_intensity = np.mean(img)
                 intensities.append(mean_intensity)
 
             # Convert A.U. to concentration using the line equation
@@ -216,17 +215,15 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
             if averaged:
                 all_concentrations.append(concentrations)
             else:
-                if sub_idx == 0:  # Initialize frames for plotting only if not averaging
-                    frames = [i * skip_frames for i in range(len(concentrations))]
+                frames = np.array([i * skip_frames * current_time_interval for i in range(len(concentrations))])
 
                 alpha = 0.3 + (sub_idx / len(subconditions)) * 0.7
                 color = condition_colors[condition_idx] * np.array([1, 1, 1, alpha])
                 plt.plot(frames, concentrations, color=color, marker='o', linestyle='-', label=f"{condition} - {subcondition}")
 
         if averaged:
-            # Perform averaging here on concentrations, not on A.U.
             avg_concentrations = np.mean(all_concentrations, axis=0)
-            frames = [i * skip_frames for i in range(len(avg_concentrations))]  # Frames for averaged data
+            frames = np.array([i * skip_frames * current_time_interval for i in range(len(avg_concentrations))])
             plt.plot(frames, avg_concentrations, color=condition_colors[condition_idx], marker='o', linestyle='-', label=condition)
 
     plt.title(f"Fluorescence expression over time - {channel}")
@@ -241,6 +238,7 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
     output_path = os.path.join(data_path, f"{channel}_{'averaged' if averaged else 'mean'}_fluorescence_vs_time.jpg")
     plt.savefig(output_path, format='jpg', dpi=200)
     plt.show()
+
 
 
 
