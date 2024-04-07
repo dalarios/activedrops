@@ -142,15 +142,9 @@ def reorgTiffsToOriginal(data_path, conditions, subconditions):
 # reorgTiffsToOriginal(data_path, conditions, subconditions)
 
 
-import matplotlib.pyplot as plt
-import numpy as np
-import os
-import glob
-import imageio
-from scipy.ndimage import gaussian_filter1d
 
 def plot_fluorescence(data_path, conditions, subconditions, channel, time_intervals, min_frame, max_frame,
-                      skip_frames=1, log_scale=False, timescale="h", averaged=False):
+                      skip_frames=1, line_slope=1, line_intercept=0, log_scale=False, timescale="h", averaged=False):
     """
     Computes and plots the fluorescence intensity over time for a given set of images across multiple conditions and subconditions.
     Can also average the subconditions within each condition if 'averaged' is True, after converting A.U. to µg/ml.
@@ -175,8 +169,8 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
     condition_colors = cmap(np.linspace(0, 1, len(conditions) + 1)[:-1])
 
     # Line equation to convert A.U. to concentration
-    line_slope = 0.0004203353275461814
-    line_intercept = 0.0017938608051425338
+    line_slope = line_slope
+    line_intercept = line_intercept
 
     # Define conversion factor based on the timescale
     if timescale == "h":
