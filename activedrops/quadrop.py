@@ -200,7 +200,16 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
             intensities = []
             for i, image_file in enumerate(image_files):
                 img = imageio.imread(image_file) / 2**16  # Normalize to 16-bit
-                mean_intensity = np.mean(img)
+
+                # Subtract minimum intensity to remove background noise
+                # img = img - np.min(img)
+
+                mean_intensity = np.mean(img[750:1250, 750:1250])
+
+                # Subtract the minimum intensity to remove background noise
+                mean_intensity = mean_intensity - np.min(img)
+
+
                 intensities.append(mean_intensity)
 
             # Convert A.U. to concentration using the line equation
@@ -228,6 +237,8 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
 
     if log_scale:
         plt.yscale('log')
+    else:
+        plt.ylim(bottom=0)
 
     output_path = os.path.join(data_path, f"{channel}_{'averaged' if averaged else 'mean'}_fluorescence_vs_time.jpg")
     plt.savefig(output_path, format='jpg', dpi=200)
@@ -237,7 +248,7 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
 
 
 # plot the raw image as heatmap of fluorescence intensity
-def fluorescence_heatmap(data_path, condition, subcondition, channel, time_interval, min_frame, max_frame, vmax, skip_frames=1):
+def fluorescence_heatmap(data_path, condition, subcondition, channel, time_interval, min_frame, max_frame, vmax, skip_frames=1, line_slope=1, line_intercept=0):
     """
     Reads each image as a matrix, creates and saves a heatmap representing the normalized pixel-wise fluorescence intensity.
 
@@ -266,9 +277,9 @@ def fluorescence_heatmap(data_path, condition, subcondition, channel, time_inter
     elif channel == "gfp":
         image_files = sorted(glob.glob(os.path.join(input_directory_path, "*gfp-4x_000.tif")))[min_frame:max_frame:skip_frames]
             
-    # Calibration curve parameters
-    line_slope = 0.0004203353275461814
-    line_intercept = 0.0015873751623883166
+    # # Calibration curve parameters
+    # line_slope = 0.0004203353275461814
+    # line_intercept = 0.0015873751623883166
     
     # Loop through each image file and create a heatmap
     for i, image_file in enumerate(image_files, start=min_frame):
@@ -371,7 +382,7 @@ def create_movies(data_path, condition, subcondition, channel, movie_type, frame
     print(f"Video saved to {out_path}")
 
 # generate movies from individual fluorescence intensity heatmaps
-def single_fluorescence_movies(data_path, conditions, subconditions, channel, time_intervals, min_frame, max_frame, vmax, skip_frames, frame_rate):
+def single_fluorescence_movies(data_path, conditions, subconditions, channel, time_intervals, min_frame, max_frame, vmax, skip_frames, frame_rate, line_slope=1, line_intercept=0):
     for i, condition in enumerate(conditions):
         time_interval = time_intervals[i]
         for subcondition in subconditions:
@@ -385,7 +396,9 @@ def single_fluorescence_movies(data_path, conditions, subconditions, channel, ti
                 min_frame=min_frame,
                 max_frame=max_frame,
                 vmax=vmax,
-                skip_frames=skip_frames
+                skip_frames=skip_frames,
+                line_intercept=line_intercept,
+                line_slope=line_slope
             )
 
             # Create annotated image movies for each condition and subcondition
