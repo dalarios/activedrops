@@ -193,9 +193,9 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
             current_time_interval = time_interval * time_conversion_factor  # Convert time_interval to the correct timescale
 
             if channel == "cy5":
-                image_files = sorted(glob.glob(os.path.join(directory_path, "*cy5-4x_000.tif")))[min_frame:max_frame:skip_frames]
+                image_files = sorted(glob.glob(os.path.join(directory_path, "*cy5*.tif")))[min_frame:max_frame:skip_frames]
             elif channel == "gfp":
-                image_files = sorted(glob.glob(os.path.join(directory_path, "*gfp-4x_000.tif")))[min_frame:max_frame:skip_frames]
+                image_files = sorted(glob.glob(os.path.join(directory_path, "*gfp*.tif")))[min_frame:max_frame:skip_frames]
 
             intensities = []
             for i, image_file in enumerate(image_files):
@@ -273,9 +273,9 @@ def fluorescence_heatmap(data_path, condition, subcondition, channel, time_inter
     image_files = sorted(glob.glob(os.path.join(input_directory_path, "*.tif")))[min_frame:max_frame:skip_frames] 
 
     if channel == "cy5":
-        image_files = sorted(glob.glob(os.path.join(input_directory_path, "*cy5-4x_000.tif")))[min_frame:max_frame:skip_frames]
+        image_files = sorted(glob.glob(os.path.join(input_directory_path, "*cy5*.tif")))[min_frame:max_frame:skip_frames]
     elif channel == "gfp":
-        image_files = sorted(glob.glob(os.path.join(input_directory_path, "*gfp-4x_000.tif")))[min_frame:max_frame:skip_frames]
+        image_files = sorted(glob.glob(os.path.join(input_directory_path, "*gfp*.tif")))[min_frame:max_frame:skip_frames]
             
     # # Calibration curve parameters
     # line_slope = 0.0004203353275461814
