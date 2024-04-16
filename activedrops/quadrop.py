@@ -214,6 +214,9 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
 
             # Convert A.U. to concentration using the line equation
             concentrations = [(intensity - line_intercept) / line_slope for intensity in intensities]
+            
+            # apply gaussian filter to smooth the curve
+            concentrations = gaussian_filter1d(concentrations, sigma=2)
 
             if averaged:
                 all_concentrations.append(concentrations)
@@ -233,7 +236,7 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
     plt.xlabel(x_label, fontsize=14)
     plt.ylabel("Protein Concentration (ng/μl)", fontsize=14)
     plt.grid(True, which='both', linestyle='--', linewidth=0.5)
-    plt.legend(loc='lower right', fontsize=10)
+    plt.legend(loc='lower right', fontsize=16)
 
     # Increase the size of x and y ticks
     plt.tick_params(axis='both', which='major', labelsize=10)
