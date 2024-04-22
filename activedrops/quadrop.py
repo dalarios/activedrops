@@ -144,7 +144,8 @@ def reorgTiffsToOriginal(data_path, conditions, subconditions):
 
 
 def plot_fluorescence(data_path, conditions, subconditions, channel, time_intervals, min_frame, max_frame,
-                      skip_frames=1, line_slope=1, line_intercept=0, log_scale=False, timescale="h", averaged=False):
+                      skip_frames=1, line_slope=1, line_intercept=0, log_scale=False, timescale="h", averaged=False, 
+                      legend_loc='upper right', subtract_first_datapoint=True):
     """
     Computes and plots the fluorescence intensity over time for a given set of images across multiple conditions and subconditions.
     Can also average the subconditions within each condition if 'averaged' is True, after converting A.U. to µg/ml.
@@ -200,10 +201,8 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
             intensities = []
             for i, image_file in enumerate(image_files):
                 img = imageio.imread(image_file) / 2**16  # Normalize to 16-bit
-
-                # Subtract minimum intensity to remove background noise
-                # img = img - np.min(img)
-
+ 
+                # Select ROI
                 mean_intensity = np.mean(img[750:1250, 750:1250])
 
                 # Subtract the minimum intensity to remove background noise
@@ -217,6 +216,10 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
             
             # apply gaussian filter to smooth the curve
             concentrations = gaussian_filter1d(concentrations, sigma=2)
+
+            # make sure first value is always 0 by subtracting the first value from all values
+            if subtract_first_datapoint == True:
+                concentrations = np.array(concentrations) - concentrations[0]
 
             if averaged:
                 all_concentrations.append(concentrations)
@@ -236,15 +239,16 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
     plt.xlabel(x_label, fontsize=14)
     plt.ylabel("Protein Concentration (ng/μl)", fontsize=14)
     plt.grid(True, which='both', linestyle='--', linewidth=0.5)
-    plt.legend(loc='lower right', fontsize=16)
+    plt.legend(loc=legend_loc, fontsize=16)
 
     # Increase the size of x and y ticks
     plt.tick_params(axis='both', which='major', labelsize=10)
 
     if log_scale:
         plt.yscale('log')
-    else:
-        plt.ylim(bottom=0)
+
+    # else:
+    #     plt.ylim(bottom=-0.5)
 
     output_path = os.path.join(data_path, f"{channel}_{'averaged' if averaged else 'mean'}_fluorescence_vs_time.jpg")
     plt.savefig(output_path, format='jpg', dpi=200)
@@ -271,9 +275,11 @@ def fluorescence_heatmap(data_path, condition, subcondition, channel, time_inter
     input_directory_path = os.path.join(data_path, condition, subcondition, "original")
     output_directory_path = os.path.join(data_path, condition, subcondition, f"intensity_heatmap_{channel}")
     
-    # Create the output directory if it doesn't exist
-    if not os.path.exists(output_directory_path):
-        os.makedirs(output_directory_path)
+    # Create the output directory if it doesn't exist but also deletes the directory if it already exists to start fresh
+    if os.path.exists(output_directory_path):
+        shutil.rmtree(output_directory_path)
+    os.makedirs(output_directory_path, exist_ok=True)
+
 
     # Get all .tif files in the folder
     image_files = sorted(glob.glob(os.path.join(input_directory_path, "*.tif")))[min_frame:max_frame:skip_frames] 
@@ -300,7 +306,7 @@ def fluorescence_heatmap(data_path, condition, subcondition, channel, time_inter
         im = ax.imshow(concentration_matrix, cmap='gray', interpolation='nearest', extent=[-2762/2, 2762/2, -2762/2, 2762/2], vmin=0, vmax=vmax)
         
         plt.colorbar(im, ax=ax, label='Protein concentration (ng/µl)')
-        plt.title(f"Time (min): {(i - min_frame) * time_interval * skip_frames / 60:.2f}. \n{condition} - {subcondition} - {channel}", fontsize=14, )
+        plt.title(f"Time (min): {(i - min_frame) * time_interval * skip_frames / 60:.2f} \nTime (hours): {(i - min_frame) * time_interval * skip_frames / 3600:.2f} \n{condition} - {subcondition} - {channel}", fontsize=14)
         plt.xlabel('x [µm]')
         plt.ylabel('y [µm]')
         
@@ -532,7 +538,7 @@ def plot_autocorrelation_values(data_path, condition, subcondition, frame_id, la
     plt.title(f'Autocorrelation Function and Fitted Exponential Decay (Frame {frame_id})')
     plt.legend()
     plt.grid(True, which='both', linestyle='--', linewidth=0.5)
-    plt.ylim(0, 1.1)
+    # plt.ylim(0, 1.1)
 
     plt.tight_layout()
 
@@ -542,33 +548,49 @@ def plot_autocorrelation_values(data_path, condition, subcondition, frame_id, la
 
 # helper function to calculate correlation length
 def correlation_length(data_frame):
-    # Assuming the data_frame structure is as expected
+    # Reshaping the data frame to a 2D grid and normalizing
     v = data_frame.pivot(index='y [m]', columns='x [m]', values="velocity magnitude [m/s]").values
-    v = v - np.mean(v)
-    intervector_distance_microns = ((data_frame["y [m]"].max() - data_frame["y [m]"].min()) / v.shape[0]) 
+    v -= np.mean(v)  # Centering the data
 
-    full_product = np.fft.fft2(v) * np.conj(np.fft.fft2(v))
-    inverse = np.real(np.fft.ifft2(full_product))
-    normalized_inverse = inverse / inverse[0, 0]
+    # FFT to find the power spectrum and compute the autocorrelation
+    fft_v = np.fft.fft2(v)
+    autocorr = np.fft.ifft2(fft_v * np.conj(fft_v))
+    autocorr = np.real(autocorr) / np.max(np.real(autocorr))  # Normalize the autocorrelation
 
-    r_values = v.shape[0] // 2
+    # Preparing to extract the autocorrelation values along the diagonal
+    r_values = min(v.shape) // 2
     results = np.zeros(r_values)
     for r in range(r_values):
-        autocorrelation_value = (normalized_inverse[r, r] + normalized_inverse[-r, -r]) / (v.shape[0] * v.shape[1])
+        # Properly average over symmetric pairs around the center
+        autocorrelation_value = (autocorr[r, r] + autocorr[-r, -r]) / 2
         results[r] = autocorrelation_value
 
+    # Normalize the results to start from 1
     results /= results[0]
 
+    # Exponential decay fitting to extract the correlation length
     def exponential_decay(x, A, B, C):
         return A * np.exp(-x / B) + C
 
-    params, _ = curve_fit(exponential_decay, np.arange(len(results)), results, maxfev=5000)
-    A, B, C = params
-    fitted_values = exponential_decay(np.arange(r_values), A, B, C)
+    # Fit parameters and handling potential issues with initial parameter guesses
+    try:
+        params, _ = curve_fit(exponential_decay, np.arange(len(results)), results, p0=(1, 10, 0), maxfev=5000)
+    except RuntimeError:
+        # Handle cases where the curve fit does not converge
+        params = [np.nan, np.nan, np.nan]  # Use NaN to indicate the fit failed
 
-    lambda_tau = -B * np.log((0.3 - C) / A) * intervector_distance_microns 
+    A, B, C = params
+    fitted_values = exponential_decay(np.arange(r_values), *params)
+
+    # Calculate the correlation length
+    intervector_distance_microns = ((data_frame["y [m]"].max() - data_frame["y [m]"].min()) / v.shape[0])
+    if B > 0 and A != C:  # Ensure valid values for logarithmic calculation
+        lambda_tau = -B * np.log((0.3 - C) / A) * intervector_distance_microns
+    else:
+        lambda_tau = np.nan  # Return NaN if parameters are not suitable for calculation
 
     return lambda_tau, results, fitted_values, intervector_distance_microns
+
 
 # load PIV data from PIVlab into dataframes
 def load_piv_data(data_path, condition, subcondition, min_frame=0, max_frame=None, skip_frames=1):
@@ -822,13 +844,18 @@ def plot_features(data_paths, conditions, subconditions, features, time_interval
         df["correlation length [um]"] = df["correlation length [um]"] * 1e6
         df["velocity magnitude [um/s]"] = df["velocity magnitude [um/s]"] * 1e6
 
+        # make "power [W]_mean" the first column
+        cols = list(df.columns)
+        # cols = [cols[-1]] + cols[:-1]
+        df = df[cols]
+
         df = df.iloc[min_frame:max_frame, :]
 
         dfs.append(df)
 
     plot_pca(dfs, data_paths, conditions, subconditions, features)
 
-    for feature in dfs[0].columns[:-1]:
+    for feature in dfs[0].columns[:]:
         plt.figure(figsize=(10, 6))
 
         for df, data_path, condition, subcondition, time_interval in zip(dfs, data_paths, conditions, subconditions, time_intervals):
@@ -841,7 +868,7 @@ def plot_features(data_paths, conditions, subconditions, features, time_interval
         plt.title(f"PIV - {feature}")
         plt.grid(True, which='both', linestyle='--', linewidth=0.5)
         plt.legend()
-        plt.savefig(output_directory_plots, format='jpg', dpi=400)
+        plt.savefig(output_directory_plots, format='jpg', dpi=300)
         plt.close()
 
 # plot features and PCA averaged over subconditions
@@ -883,7 +910,7 @@ def plot_features_averages(data_paths, conditions, subconditions, features, time
 
     plot_pca(dfs, data_paths, conditions, subconditions, features)
 
-    for feature in dfs[0].columns[:-1]:
+    for feature in dfs[0].columns[:]:
         plt.figure(figsize=(10, 6))
 
         for df, data_path, condition, subcondition, time_interval in zip(dfs, data_paths, conditions, subconditions, time_intervals):
@@ -896,11 +923,11 @@ def plot_features_averages(data_paths, conditions, subconditions, features, time
         plt.title(f"PIV - {feature}")
         plt.grid(True, which='both', linestyle='--', linewidth=0.5)
         plt.legend()
-        plt.savefig(output_directory_plots, format='jpg', dpi=400)
+        plt.savefig(output_directory_plots, format='jpg', dpi=300)
         plt.close()
 
 
-def plot_PIV_features(data_path, conditions, subconditions, features_pca, time_intervals, sigma=10, min_frame=0, max_frame=None):
+def plot_PIV_features(data_path, conditions, subconditions, features_pca, time_intervals, sigma=10, min_frame=0, max_frame=None, averages=True):
     # Plot features for individual subconditions
     for condition in conditions:
         data_paths = [data_path] * len(subconditions)
@@ -933,18 +960,19 @@ def plot_PIV_features(data_path, conditions, subconditions, features_pca, time_i
         max_frame=max_frame,
     )
 
-    # Plot features for averaged subconditions
-    data_paths = [data_path] * len(conditions)
-    subcondition_list = ['averaged'] * len(conditions)
-    time_interval_list = time_intervals
+    if averages == True:
+        # Plot features for averaged subconditions
+        data_paths = [data_path] * len(conditions)
+        subcondition_list = ['averaged'] * len(conditions)
+        time_interval_list = time_intervals
 
-    plot_features_averages(
-        data_paths,
-        conditions,
-        subcondition_list,
-        features_pca,
-        time_intervals=time_interval_list,
-        sigma=sigma,
-        min_frame=min_frame,
-        max_frame=max_frame,
-    )
+        plot_features_averages(
+            data_paths,
+            conditions,
+            subcondition_list,
+            features_pca,
+            time_intervals=time_interval_list,
+            sigma=sigma,
+            min_frame=min_frame,
+            max_frame=max_frame,
+        )
