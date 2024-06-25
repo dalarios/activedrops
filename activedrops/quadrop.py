@@ -235,6 +235,8 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
             frames = np.array([i * skip_frames * current_time_interval for i in range(len(avg_concentrations))])
             plt.plot(frames, avg_concentrations, color=condition_colors[condition_idx], marker='o', linestyle='-', label=condition)
 
+
+
     # plt.title(f"Fluorescence expression over time - {channel}")
     plt.xlabel(x_label, fontsize=14)
     plt.ylabel("Protein Concentration (ng/μl)", fontsize=14)
