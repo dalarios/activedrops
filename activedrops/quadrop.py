@@ -294,7 +294,7 @@ def fluorescence_heatmap(data_path, condition, subcondition, channel, time_inter
     # # Calibration curve parameters
     # line_slope = 0.0004203353275461814
     # line_intercept = 0.0015873751623883166
-    
+    y = 0.0004203353275461814 * x + 0.0015873751623883166
     # Loop through each image file and create a heatmap
     for i, image_file in enumerate(image_files, start=min_frame):
         # Read the image into a numpy array
