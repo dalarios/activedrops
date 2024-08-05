@@ -152,7 +152,7 @@ def plot_fluorescence(data_path, conditions, subconditions, channel, time_interv
     Time is displayed based on the specified timescale and time interval for each condition.
     The final plot, including all curves, is saved as a JPG file.
 
-    Parameters:
+    Parameters: 
     - data_path (str): Base path where the images are stored.
     - conditions (list of str): List of condition names.
     - subconditions (list of str): List of subcondition names.
