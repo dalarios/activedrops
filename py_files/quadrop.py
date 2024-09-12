@@ -871,11 +871,12 @@ def quantify_tiffiles(data_path, conditions, subconditions, calibration_curve_pa
             negative_pattern = os.path.join(data_path, negative_condition, subcondition, "original", "*GFP*.tif")
             negative_paths = sorted(glob.glob(negative_pattern))
 
+            # Apply skip_frames in both cases
+            paths = paths[::skip_frames]
             if subtract_negative and negative_paths:
+                negative_paths = negative_paths[::skip_frames]  # Skip frames in negative paths too
                 mean_intensity_list = subtract_negative_intensity(paths, negative_paths, skip_frames)
             else:
-                if not subtract_negative:
-                    paths = paths[::skip_frames]
                 with mp.Pool(mp.cpu_count()) as pool:
                     mean_intensity_list = list(tqdm(pool.imap(calculate_mean_intensity, paths), total=len(paths), desc=f"Calculating intensities for {condition} - {subcondition}"))
 
@@ -938,6 +939,7 @@ def quantify_tiffiles(data_path, conditions, subconditions, calibration_curve_pa
     plot_results(combined_df, mean_df, output_dir, sample_concentration_values, mean_intensity_calibration, slope, intercept, subtract_negative=subtract_negative, negative_condition=negative_condition)
 
     return combined_csv_path, mean_csv_path
+
 
 
 
