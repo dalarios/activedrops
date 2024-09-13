@@ -1805,12 +1805,17 @@ def sanitize_filename(name):
     """Helper function to replace spaces and special characters in filenames."""
     return name.replace(" ", "_").replace("[", "").replace("]", "").replace("/", "_")
 
-def plot_columns(data_path, x_column, y_column, output_folder="output_data", merged_file="merged_expression_PIV.csv", plot_output_folder="output_data/expression_piv_plots", sigma_x=None, sigma_y=1, x_log=False, y_log=False, min_frame=0, max_frame=None):
+
+def plot_expression_piv(data_path, conditions, x_column, y_column, output_folder="output_data", 
+                        merged_file="merged_expression_PIV.csv", plot_output_folder="output_data/expression_piv_plots", 
+                        sigma_x=None, sigma_y=1, x_log=False, y_log=False, min_frame=0, max_frame=None, 
+                        individual_plots=True):
     """
     Plots the specified x_column vs y_column from the DataFrame for each condition and also generates a combined plot.
     
     Parameters:
     - data_path: Path to the data folder.
+    - conditions: List of conditions to plot.
     - x_column: The column to use for the x-axis.
     - y_column: The column to use for the y-axis (with optional Gaussian smoothing).
     - output_folder: Folder where the merged data is stored.
@@ -1820,15 +1825,19 @@ def plot_columns(data_path, x_column, y_column, output_folder="output_data", mer
     - sigma_y: Gaussian smoothing factor to apply to the y-axis data (if None, no smoothing applied).
     - x_log: If True, set x-axis to log scale. Default is False.
     - y_log: If True, set y-axis to log scale. Default is False.
+    - min_frame: Minimum frame to slice the DataFrame. Default is 0.
+    - max_frame: Maximum frame to slice the DataFrame. If None, all frames after min_frame are used.
+    - individual_plots: If True, generate individual plots for each condition. Default is True.
     """
+    
     # Load the merged DataFrame from the output_data folder
     merged_file_path = os.path.join(data_path, output_folder, merged_file)
     merged_df = pd.read_csv(merged_file_path)
 
-    # Slice the DataFrame based on the min_frame and max_frame per each condition
+    # Slice the DataFrame based on the min_frame and max_frame for each condition
     if min_frame > 0 or max_frame is not None:
         sliced_dfs = []
-        for condition in merged_df['condition'].unique():
+        for condition in conditions:
             condition_df = merged_df[merged_df['condition'] == condition]
             if max_frame is not None:
                 condition_df = condition_df.iloc[min_frame:max_frame]
@@ -1836,12 +1845,6 @@ def plot_columns(data_path, x_column, y_column, output_folder="output_data", mer
                 condition_df = condition_df.iloc[min_frame:]
             sliced_dfs.append(condition_df)
         merged_df = pd.concat(sliced_dfs)
-    
-    # Get the unique conditions
-    conditions = merged_df['condition'].unique()
-
-    # Ignore the 'negative' condition if present
-    conditions = [condition for condition in conditions if condition.lower() != 'negative']
 
     # Define the output folder for plots
     plot_output_dir = os.path.join(data_path, plot_output_folder)
@@ -1856,15 +1859,8 @@ def plot_columns(data_path, x_column, y_column, output_folder="output_data", mer
         condition_df = merged_df[merged_df['condition'] == condition]
         
         # Apply Gaussian smoothing to the selected x-axis and y-axis columns
-        if sigma_x is not None:
-            smoothed_x = gaussian_filter1d(condition_df[x_column], sigma=sigma_x)
-        else:
-            smoothed_x = condition_df[x_column]
-        
-        if sigma_y is not None:
-            smoothed_y = gaussian_filter1d(condition_df[y_column], sigma=sigma_y)
-        else:
-            smoothed_y = condition_df[y_column]
+        smoothed_x = gaussian_filter1d(condition_df[x_column], sigma=sigma_x) if sigma_x is not None else condition_df[x_column]
+        smoothed_y = gaussian_filter1d(condition_df[y_column], sigma=sigma_y) if sigma_y is not None else condition_df[y_column]
         
         # Filter out non-positive values if log scale is applied to either axis
         if x_log and y_log:
@@ -1885,28 +1881,29 @@ def plot_columns(data_path, x_column, y_column, output_folder="output_data", mer
         sanitized_y_column = sanitize_filename(y_column)
         sanitized_condition = sanitize_filename(condition)
         
-        # Line plot for the current condition (without scatter points)
-        plt.figure(figsize=(8, 6))
-        plt.plot(smoothed_x, smoothed_y, label=condition)
-        plt.title(f'{x_column} vs {y_column} for Condition: {condition}')
-        plt.xlabel(x_column)
-        plt.ylabel(y_column)
-        
-        # Set log scale if specified
-        if x_log:
-            plt.xscale('log')
-        if y_log:
-            plt.yscale('log')
-        
-        plt.grid(True)
+        # Generate individual plots if individual_plots is True
+        if individual_plots:
+            plt.figure(figsize=(8, 6))
+            plt.plot(smoothed_x, smoothed_y, label=condition)
+            plt.title(f'{x_column} vs {y_column} for Condition: {condition}')
+            plt.xlabel(x_column)
+            plt.ylabel(y_column)
+            
+            # Set log scale if specified
+            if x_log:
+                plt.xscale('log')
+            if y_log:
+                plt.yscale('log')
+            
+            plt.grid(True)
 
-        # Save the plot (sanitized filenames)
-        output_file = os.path.join(plot_output_dir, f"{sanitized_x_column}_vs_{sanitized_y_column}_{sanitized_condition}.png")
-        plt.savefig(output_file, dpi=300)
-        plt.close()
-        print(f"Plot saved for condition {condition} at {output_file}")
+            # Save the individual plot
+            output_file = os.path.join(plot_output_dir, f"{sanitized_x_column}_vs_{sanitized_y_column}_{sanitized_condition}.png")
+            plt.savefig(output_file, dpi=300)
+            plt.close()
+            print(f"Plot saved for condition {condition} at {output_file}")
 
-        # Add the condition's plot to the combined figure (without scatter points)
+        # Add the condition's plot to the combined figure
         plt.plot(smoothed_x, smoothed_y, label=condition)
 
     # Finalize the combined plot with all conditions
@@ -1923,14 +1920,12 @@ def plot_columns(data_path, x_column, y_column, output_folder="output_data", mer
     plt.grid(True)
     plt.legend()
     
-    # Save the combined plot (sanitized filenames)
+    # Save the combined plot
     combined_plot_file = os.path.join(plot_output_dir, f"{sanitized_x_column}_vs_{sanitized_y_column}_All_Conditions.png")
     plt.savefig(combined_plot_file, dpi=300)
     plt.close()
     
     print(f"Combined plot saved at {combined_plot_file}")
-
-
 
 
 
