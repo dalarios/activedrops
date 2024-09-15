@@ -1787,7 +1787,7 @@ def merge_expression_piv_data(data_path, output_folder="output_data", expression
     expression_df.rename(columns={'Condition': 'condition', 'Subcondition': 'subcondition'}, inplace=True)
     
     # Merge the two DataFrames on the common columns: 'time (s)', 'condition', and 'subcondition'
-    merged_df = pd.merge(expression_df, piv_df, on=['time (s)', 'condition', 'subcondition'], how='outer')
+    merged_df = pd.merge(expression_df, piv_df, on=['time (s)', 'condition', 'subcondition'], how='left')
     
     # Define the output directory path
     output_dir = os.path.join(data_path, output_folder)
@@ -1806,10 +1806,16 @@ def sanitize_filename(name):
     return name.replace(" ", "_").replace("[", "").replace("]", "").replace("/", "_")
 
 
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.ndimage import gaussian_filter1d
+
 def plot_expression_piv(data_path, conditions, x_column, y_column, output_folder="output_data", 
                         merged_file="merged_expression_PIV.csv", plot_output_folder="output_data/expression_piv_plots", 
                         sigma_x=None, sigma_y=1, x_log=False, y_log=False, min_frame=0, max_frame=None, 
-                        individual_plots=True):
+                        individual_plots=True, fill_na_method=None):
     """
     Plots the specified x_column vs y_column from the DataFrame for each condition and also generates a combined plot.
     
@@ -1828,11 +1834,22 @@ def plot_expression_piv(data_path, conditions, x_column, y_column, output_folder
     - min_frame: Minimum frame to slice the DataFrame. Default is 0.
     - max_frame: Maximum frame to slice the DataFrame. If None, all frames after min_frame are used.
     - individual_plots: If True, generate individual plots for each condition. Default is True.
+    - fill_na_method: Method to fill NA values ('ffill', 'bfill', 'zero', None). If None, NA values are dropped.
     """
     
     # Load the merged DataFrame from the output_data folder
     merged_file_path = os.path.join(data_path, output_folder, merged_file)
     merged_df = pd.read_csv(merged_file_path)
+
+    # Handle NA values based on the fill_na_method
+    if fill_na_method == 'ffill':
+        merged_df.fillna(method='ffill', inplace=True)
+    elif fill_na_method == 'bfill':
+        merged_df.fillna(method='bfill', inplace=True)
+    elif fill_na_method == 'zero':
+        merged_df.fillna(0, inplace=True)
+    else:
+        merged_df.dropna(subset=[x_column, y_column], inplace=True)  # Drop rows where x or y are NaN
 
     # Slice the DataFrame based on the min_frame and max_frame for each condition
     if min_frame > 0 or max_frame is not None:
@@ -1857,6 +1874,10 @@ def plot_expression_piv(data_path, conditions, x_column, y_column, output_folder
     for condition in conditions:
         # Filter the DataFrame for the current condition
         condition_df = merged_df[merged_df['condition'] == condition]
+        
+        if condition_df.empty:
+            print(f"No data available for condition: {condition}")
+            continue
         
         # Apply Gaussian smoothing to the selected x-axis and y-axis columns
         smoothed_x = gaussian_filter1d(condition_df[x_column], sigma=sigma_x) if sigma_x is not None else condition_df[x_column]
@@ -1926,6 +1947,7 @@ def plot_expression_piv(data_path, conditions, x_column, y_column, output_folder
     plt.close()
     
     print(f"Combined plot saved at {combined_plot_file}")
+
 
 
 
