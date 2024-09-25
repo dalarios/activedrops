@@ -2,6 +2,8 @@ from pymol import cmd, stored
 import pandas as pd
 import os
 import glob
+from multiprocessing import Pool, set_start_method, get_start_method
+set_start_method('fork', force=True)
 
 # Dictionaries for single-letter amino acid codes and full atom names
 aa_dict = {
@@ -104,12 +106,23 @@ def log_interactions(file_path, threshold=5.0):
     cmd.delete("all")  # Clear all selections to prepare for the next file
     return list(interactions)  # Convert set to list
 
+def process_file(file_path, threshold):
+    return log_interactions(file_path, threshold)
+
 def process_folder(folder_path, threshold=5.0):
     all_interactions = []
-    files = glob.glob(os.path.join(folder_path, "*.pdb")) + glob.glob(os.path.join(folder_path, "*.cif"))
+    subfolders = [f.path for f in os.scandir(folder_path) if f.is_dir()]
+
+    model_0_files = []
+    for subfolder in subfolders:
+        model_0_files.extend(glob.glob(os.path.join(subfolder, "*model_0*.pdb")) + glob.glob(os.path.join(subfolder, "*model_0*.cif")))
+
+    # Use multiprocessing to process files in parallel
+    with Pool() as pool:
+        results = pool.starmap(process_file, [(file_path, threshold) for file_path in model_0_files])
     
-    for file_path in files:
-        all_interactions.extend(log_interactions(file_path, threshold))
+    for result in results:
+        all_interactions.extend(result)
 
     # Create a DataFrame from the interactions
     df = pd.DataFrame(all_interactions, columns=["file", "chain", "resi", "resn", "atom_name", "interacting_atom", "interacting_resn", "interacting_chain", "interacting_resinumber", "distance (angstroms)"])
@@ -120,14 +133,14 @@ def process_folder(folder_path, threshold=5.0):
     df['interacting_full_atom_name'] = df['interacting_atom'].apply(get_full_atom_name)
     df['interactingresi_oneletter'] = df['interacting_resn'].apply(three_to_one)
 
-    # Keep only the closest interaction for each residue pair
-    # df = df.loc[df.groupby(['file', 'chain', 'resi', 'resn', 'interacting_chain', 'interacting_resn', 'interacting_resinumber'])['distance (angstroms)'].idxmin()]
-
-    # Save the DataFrame to a CSV file
+    # Save the DataFrame to a CSV file but first remove the first 5 characters from the file name and capitalize the first letter
+    df['file'] = df['file'].str[5:].str.capitalize()
     df.to_csv(os.path.join(folder_path, "interactions_chimeras.csv"), index=False)
     print(f"DataFrame has been saved to interactions_chimeras.csv")
 
-folder_path = "../data/3d_predictions/motor2x_ATP_ADP_Mg2x_alphaTub_betaTub/"
+
+
+folder_path = "../data/3d_predictions/species_seeds/"
 
 # Run the function for a folder with a threshold
-process_folder(folder_path, threshold=5)  # Replace with the path to your folder containing PDB or CIF files
+process_folder(folder_path, threshold=7)  # Replace with the path to your folder containing PDB or CIF files
