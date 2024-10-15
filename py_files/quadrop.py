@@ -1948,6 +1948,8 @@ def plot_expression_piv(data_path, conditions, x_column, y_column, output_folder
     
     print(f"Combined plot saved at {combined_plot_file}")
 
+    return merged_df
+
 
 
 
