@@ -434,7 +434,8 @@ def fluorescence_heatmap(data_path, conditions, subconditions, channel, time_int
             slope, intercept = None, None
             if channel != "cy5":
                 # Calibration curve data and fit
-                sample_concentration_values = [0, 2, 5, 10, 20, 40, 80, 160, 320]
+                initial_concentration = 280 
+                sample_concentration_values = [0, initial_concentration/128, initial_concentration/64, initial_concentration/32, initial_concentration/16, initial_concentration/8, initial_concentration/4, initial_concentration/2, initial_concentration]
 
                 if calibration_curve_paths is None or len(calibration_curve_paths) != len(sample_concentration_values):
                     raise ValueError(f"Mismatch in lengths: {len(calibration_curve_paths)} calibration images, {len(sample_concentration_values)} sample concentrations")
