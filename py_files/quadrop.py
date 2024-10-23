@@ -849,7 +849,8 @@ def quantify_tiffiles(data_path, conditions, subconditions, calibration_curve_pa
     calibration_curve_paths = sorted(calibration_curve_paths)
 
     # Calibration curve data and fit
-    sample_concentration_values = [0, 2, 5, 10, 20, 40, 80, 160, 320]
+    initial_concentration = 280 
+    sample_concentration_values = [0, initial_concentration/128, initial_concentration/64, initial_concentration/32, initial_concentration/16, initial_concentration/8, initial_concentration/4, initial_concentration/2, initial_concentration]
     with mp.Pool(mp.cpu_count()) as pool:
         mean_intensity_calibration = pool.map(calculate_mean_intensity, calibration_curve_paths)
     slope, intercept = np.polyfit(sample_concentration_values, mean_intensity_calibration, 1)
