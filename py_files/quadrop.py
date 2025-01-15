@@ -339,7 +339,13 @@ def ensure_output_dir(output_dir):
 
 def calculate_mean_intensity(path):
     """Calculate mean intensity of an image."""
-    return io.imread(path).mean()
+    img = io.imread(path)
+    # Get the median value
+    median = np.median(img)
+    # Get only pixels brighter than median
+    bright_pixels = img[img >= median]
+    # Return mean of bright pixels
+    return bright_pixels.mean()
 
 def calculate_protein_concentration(mean_intensity, intercept, slope):
     """Calculate protein concentration in ng/ul and nM."""
@@ -862,7 +868,7 @@ def quantify_tiffiles(data_path, conditions, subconditions, calibration_curve_pa
         protein_length = protein_lengths_list[idx]
 
         for subcondition in subconditions:
-            pattern = os.path.join(data_path, condition, subcondition, "original", "*GFP*.tif")
+            pattern = os.path.join(data_path, condition, subcondition, "original", "*[Gg][Ff][Pp]*.tif")
             paths = sorted(glob.glob(pattern))
 
             if not paths:
@@ -870,7 +876,7 @@ def quantify_tiffiles(data_path, conditions, subconditions, calibration_curve_pa
                 continue
 
             # Find the negative control paths
-            negative_pattern = os.path.join(data_path, negative_condition, subcondition, "original", "*GFP*.tif")
+            negative_pattern = os.path.join(data_path, negative_condition, subcondition, "original", "*[Gg][Ff][Pp]*.tif")
             negative_paths = sorted(glob.glob(negative_pattern))
 
             # Apply skip_frames in both cases
