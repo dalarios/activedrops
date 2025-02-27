@@ -140,7 +140,7 @@ def process_folder(folder_path, threshold=5.0):
 
 
 
-folder_path = "../data/3d_predictions/species_seeds/"
+folder_path = "../data/3d_predictions/jiapei/"
 
 # Run the function for a folder with a threshold
 process_folder(folder_path, threshold=7)  # Replace with the path to your folder containing PDB or CIF files

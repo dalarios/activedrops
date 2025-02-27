@@ -440,8 +440,8 @@ def fluorescence_heatmap(data_path, conditions, subconditions, channel, time_int
             slope, intercept = None, None
             if channel != "cy5":
                 # Calibration curve data and fit
-                initial_concentration = 280 
-                sample_concentration_values = [0, initial_concentration/128, initial_concentration/64, initial_concentration/32, initial_concentration/16, initial_concentration/8, initial_concentration/4, initial_concentration/2, initial_concentration]
+                initial_concentration = 285 
+                sample_concentration_values = [initial_concentration/128, initial_concentration/64, initial_concentration/32, initial_concentration/16, initial_concentration/8, initial_concentration/4, initial_concentration/2, initial_concentration]
 
                 if calibration_curve_paths is None or len(calibration_curve_paths) != len(sample_concentration_values):
                     raise ValueError(f"Mismatch in lengths: {len(calibration_curve_paths)} calibration images, {len(sample_concentration_values)} sample concentrations")
@@ -856,7 +856,7 @@ def quantify_tiffiles(data_path, conditions, subconditions, calibration_curve_pa
 
     # Calibration curve data and fit
     initial_concentration = 280 
-    sample_concentration_values = [0, initial_concentration/128, initial_concentration/64, initial_concentration/32, initial_concentration/16, initial_concentration/8, initial_concentration/4, initial_concentration/2, initial_concentration]
+    sample_concentration_values = [initial_concentration/128, initial_concentration/64, initial_concentration/32, initial_concentration/16, initial_concentration/8, initial_concentration/4, initial_concentration/2, initial_concentration]
     with mp.Pool(mp.cpu_count()) as pool:
         mean_intensity_calibration = pool.map(calculate_mean_intensity, calibration_curve_paths)
     slope, intercept = np.polyfit(sample_concentration_values, mean_intensity_calibration, 1)
@@ -1118,6 +1118,55 @@ def split_tiffs(data_path, conditions, subconditions, channel, file_interval=Non
 
             print(f"Copied every {file_interval}th f'{channel}' file from {original_dir_path} into {data_dir}.")
 
+
+
+def split_tiffs_stack(data_path, conditions, subconditions, channels, file_interval=None):
+
+    for condition in conditions:
+        for subcondition in subconditions:
+            # Construct the path to the 'original' directory within the subcondition
+            original_dir_path = os.path.join(data_path, condition, subcondition, "original")
+
+            if not os.path.exists(original_dir_path):
+                print(f"Error: The original directory {original_dir_path} does not exist.")
+                continue
+
+            for channel in channels:
+                # Create the directory for the channel
+                data_dir = os.path.join(data_path, condition, subcondition, f"{channel}-{file_interval}x")
+                os.makedirs(data_dir, exist_ok=True)
+
+                # Check if the expected output is already there
+                expected_files = [f for f in sorted(os.listdir(original_dir_path))
+                                  if f.lower().endswith(".tif") and f"{channel}" in f.lower()]
+                expected_output_files = expected_files[::file_interval or 1]
+                already_copied_files = set(os.listdir(data_dir))
+
+                # If all expected files are already copied, skip this subcondition
+                if all(file in already_copied_files for file in expected_output_files):
+                    print(f"Skipping {subcondition} for channel {channel} as the expected output is already present.")
+                    continue
+
+                # Separate list for channel-specific files
+                channel_files = []
+
+                # Iterate over all files in the original directory
+                file_list = sorted(os.listdir(original_dir_path))
+                for filename in file_list:
+                    # Check if the file is a .tif file and contains the channel (case insensitive)
+                    if filename.lower().endswith(".tif") and f"{channel}" in filename.lower():
+                        channel_files.append(filename)
+
+                # Copy files based on the file_interval
+                if file_interval is None:
+                    file_interval = 1  # Copy all files if no interval is set
+
+                for idx, filename in enumerate(channel_files):
+                    if idx % file_interval == 0:
+                        file_path = os.path.join(original_dir_path, filename)
+                        shutil.copy(file_path, os.path.join(data_dir, filename))
+
+                print(f"Copied every {file_interval}th '{channel}' file from {original_dir_path} into {data_dir}.")
 
 
 ######################################### PIV #########################################
