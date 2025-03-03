@@ -396,7 +396,7 @@ def process_image(args):
         label = 'Normalized Fluorescence Intensity'
     else:
         # Convert intensity values to protein concentration using the calibration curve
-        matrix_to_plot = calculate_protein_concentration(intensity_matrix, slope, intercept)
+        matrix_to_plot = calculate_protein_concentration_ug_ml(intensity_matrix, slope, intercept)
         matrix_to_plot = matrix_to_plot / 27000 * 1E6
         label = 'Protein concentration (nM)'
 
