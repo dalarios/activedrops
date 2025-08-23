@@ -1258,7 +1258,7 @@ def generate_dataframes_from_piv_data(data_path, condition, subcondition, min_fr
     mean_data_frame.rename(columns={'index': 'frame'}, inplace=True)
 
     # Subtract the minimum row value for each column from the entire column for velocity magnitude
-    mean_data_frame["velocity magnitude [m/s]"] = mean_data_frame["velocity magnitude [m/s]"] - mean_data_frame["velocity magnitude [m/s]"].min()
+    mean_data_frame["velocity magnitude [m/s]"] = mean_data_frame["velocity magnitude [m/s]"] 
     
     # add a column with total distance travelled
     mean_data_frame["distance [m]"] = mean_data_frame["velocity magnitude [m/s]"].cumsum() * time_interval
