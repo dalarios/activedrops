@@ -386,7 +386,16 @@ def convert_time_units(time_values_s):
     return time_values_s, time_values_min, time_values_h
 
 def process_image(args):
-    image_file, output_directory_path, channel, slope, intercept, vmax, time_interval, i, show_scalebar, min_frame, skip_frames, condition, subcondition = args
+    import matplotlib.patheffects as patheffects  # For scale bar text outline
+
+    # Unpack arguments, allowing for an optional custom_title argument
+    # If args has 14 elements, the last is custom_title; otherwise, custom_title is None/False
+    if len(args) == 14:
+        (image_file, output_directory_path, channel, slope, intercept, vmax, time_interval, i, show_scalebar, min_frame, skip_frames, condition, subcondition, custom_title) = args
+    else:
+        (image_file, output_directory_path, channel, slope, intercept, vmax, time_interval, i, show_scalebar, min_frame, skip_frames, condition, subcondition) = args
+        custom_title = False
+
     # Read the image into a numpy array
     intensity_matrix = io.imread(image_file)
 
@@ -400,24 +409,83 @@ def process_image(args):
         matrix_to_plot = matrix_to_plot / 27000 * 1E6
         label = 'Protein concentration (nM)'
 
-    # Plot the heatmap
-    fig, ax = plt.subplots(figsize=(12, 12))
+    # Plot the heatmap with a larger figure size
+    fig, ax = plt.subplots(figsize=(16, 16))
     im = ax.imshow(matrix_to_plot, cmap='gray', interpolation='nearest', vmin=0, vmax=vmax)
 
     if show_scalebar:
         plt.colorbar(im, ax=ax, label=label)
-    plt.title(f"Time (min): {(i - min_frame) * time_interval * skip_frames / 60:.2f} \nTime (h): {(i - min_frame) * time_interval * skip_frames / 3600:.2f} \n{condition} - {subcondition} - {channel}", fontsize=20)
-    plt.xlabel('x [µm]')
-    plt.ylabel('y [µm]')
-    plt.grid(True, color='#d3d3d3', linewidth=0.5, alpha=0.5)
+    
+    # Remove axes and make image fill whole size
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    
+    # Add title inside the image at top right, but ensure it doesn't go out of bounds
+    if custom_title:
+        title_text = str(custom_title)
+    else:
+        title_text = f"{condition} - {subcondition} - {channel}"
 
-    # Save the heatmap
+    # Truncate the title if it's too long to fit in the image
+    # Estimate max characters based on font size and figure width
+    # This is a heuristic: adjust max_chars as needed for your use case
+    max_chars = 30  # Reduced for right alignment
+    if len(title_text) > max_chars:
+        title_text = title_text[:max_chars-3] + "..."
+
+    # Place the title at top right with right alignment
+    # Use 0.98 for x position to give some margin from the right edge
+    ax.text(0.98, 0.98, title_text, 
+            transform=ax.transAxes, color='white', fontsize=34, 
+            weight='bold', va='top', ha='right',
+            path_effects=[patheffects.withStroke(linewidth=3, foreground='black', alpha=0.7)],
+            clip_on=True)
+    
+    # Add timer information at top left in white
+    time_hours = (i - min_frame) * time_interval * skip_frames / 3600
+    time_minutes = (i - min_frame) * time_interval * skip_frames / 60
+    
+    ax.text(0.02, 0.99, f"{time_hours:.2f} h", 
+            transform=ax.transAxes, color='white', fontsize=38, 
+            weight='bold', va='top', ha='left',
+            path_effects=[patheffects.withStroke(linewidth=3, foreground='black', alpha=0.7)])
+    
+    ax.text(0.02, 0.94, f"{time_minutes:.2f} min", 
+            transform=ax.transAxes, color='white', fontsize=38, 
+            weight='bold', va='top', ha='left',
+            path_effects=[patheffects.withStroke(linewidth=3, foreground='black', alpha=0.7)])
+
+    # Draw a 1mm scale bar (730 pixels) at the bottom right
+    scalebar_length_px = 730
+    scalebar_height = max(4, int(matrix_to_plot.shape[0] * 0.005))  # 4 pixels or 0.5% of image height
+    color = 'white' if np.mean(matrix_to_plot) < 0.5 * vmax else 'black'
+
+    # Coordinates for the scale bar
+    x_start = matrix_to_plot.shape[1] - scalebar_length_px - 40  # 40 px from right edge
+    x_end = matrix_to_plot.shape[1] - 40
+    y_pos = matrix_to_plot.shape[0] - 40  # 40 px from bottom
+
+    # Draw the scale bar as a thick line
+    ax.hlines(
+        y=y_pos, xmin=x_start, xmax=x_end, colors=color, linewidth=scalebar_height, zorder=10, alpha=0.9
+    )
+    # Add text label above the scale bar
+    ax.text(
+        (x_start + x_end) / 2, y_pos - 15, "1 mm", color=color, fontsize=18, ha='center', va='bottom', weight='bold', zorder=11,
+        path_effects=[patheffects.withStroke(linewidth=3, foreground='black' if color == 'white' else 'white', alpha=0.7)]
+    )
+
+    # Save the heatmap with no borders
     heatmap_filename = f"heatmap_frame_{i}.png"
     heatmap_path = os.path.join(output_directory_path, heatmap_filename)
-    plt.savefig(heatmap_path, bbox_inches='tight', pad_inches=0.1, dpi=200)
+    plt.savefig(heatmap_path, bbox_inches='tight', pad_inches=0, dpi=200)
     plt.close(fig)
 
-def fluorescence_heatmap(data_path, conditions, subconditions, channel, time_interval_list, vmax, min_frame=0, max_frame=None, skip_frames=1, calibration_curve_paths=None, show_scalebar=True, batch_size=100):
+def fluorescence_heatmap(data_path, conditions, subconditions, channel, time_interval_list, vmax, min_frame=0, max_frame=None, skip_frames=1, calibration_curve_paths=None, show_scalebar=True, batch_size=100, custom_title=None):
     """
     Reads each image as a matrix, creates, and saves a heatmap representing the normalized pixel-wise fluorescence intensity.
 
@@ -434,6 +502,7 @@ def fluorescence_heatmap(data_path, conditions, subconditions, channel, time_int
     - calibration_curve_paths (list): List of file paths for the calibration curve images.
     - show_scalebar (bool): Whether to show the color scale bar in the heatmap.
     - batch_size (int): Number of images to process in each batch to avoid memory overload.
+    - custom_title (str or None): Custom title to display on the heatmap. If None or False, use default.
     """
     output_data_dir = os.path.join(data_path, "output_data", "movies")
     ensure_output_dir(output_data_dir)
@@ -475,8 +544,12 @@ def fluorescence_heatmap(data_path, conditions, subconditions, channel, time_int
                     batch_files = image_files[batch_start:batch_end]
 
                     # Prepare arguments for multiprocessing
-                    args = [(image_file, output_directory_path, channel, slope, intercept, vmax, time_interval, i, show_scalebar, min_frame, skip_frames, condition, subcondition)
-                            for i, image_file in enumerate(batch_files, start=batch_start + min_frame)]
+                    if custom_title:
+                        args = [(image_file, output_directory_path, channel, slope, intercept, vmax, time_interval, i, show_scalebar, min_frame, skip_frames, condition, subcondition, custom_title)
+                                for i, image_file in enumerate(batch_files, start=batch_start + min_frame)]
+                    else:
+                        args = [(image_file, output_directory_path, channel, slope, intercept, vmax, time_interval, i, show_scalebar, min_frame, skip_frames, condition, subcondition)
+                                for i, image_file in enumerate(batch_files, start=batch_start + min_frame)]
 
                     with mp.Pool(mp.cpu_count()) as pool:
                         for _ in pool.imap(process_image, args):
