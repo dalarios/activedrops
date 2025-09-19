@@ -428,7 +428,7 @@ def process_image(args):
     if custom_title:
         title_text = str(custom_title)
     else:
-        title_text = f"{condition} - {subcondition} - {channel}"
+        title_text = f"{condition}"
 
     # Truncate the title if it's too long to fit in the image
     # Estimate max characters based on font size and figure width
@@ -440,7 +440,7 @@ def process_image(args):
     # Place the title at top right with right alignment
     # Use 0.98 for x position to give some margin from the right edge
     ax.text(0.98, 0.98, title_text, 
-            transform=ax.transAxes, color='white', fontsize=34, 
+            transform=ax.transAxes, color='white', fontsize=40, 
             weight='bold', va='top', ha='right',
             path_effects=[patheffects.withStroke(linewidth=3, foreground='black', alpha=0.7)],
             clip_on=True)
@@ -497,7 +497,11 @@ def fluorescence_heatmap(data_path, conditions, subconditions, channel, time_int
     - time_interval_list (list): List of time intervals in seconds between frames for each condition.
     - min_frame (int): Minimum frame number to start processing from.
     - max_frame (int): Maximum frame number to stop processing at.
-    - vmax (float): Maximum value for color scale in the heatmap.
+    - vmax (float | list | dict): Maximum value(s) for color scale in the heatmap.
+        If float, applied to all movies. If list, it must have the same length as
+        subconditions and is applied by position to each subcondition for all conditions.
+        If dict, keys can be subcondition names or "condition:subcondition" strings
+        to target specific movies.
     - skip_frames (int): Interval to skip frames (default is 1, meaning process every frame).
     - calibration_curve_paths (list): List of file paths for the calibration curve images.
     - show_scalebar (bool): Whether to show the color scale bar in the heatmap.
@@ -510,7 +514,7 @@ def fluorescence_heatmap(data_path, conditions, subconditions, channel, time_int
     for idx, condition in enumerate(conditions):
         time_interval = time_interval_list[idx]
 
-        for subcondition in subconditions:
+        for sub_idx, subcondition in enumerate(subconditions):
             # Determine the directory paths based on the channel
             input_directory_path = os.path.join(data_path, condition, subcondition, "original")
             output_directory_path = os.path.join(output_data_dir, f"{condition}_{subcondition}_heatmaps_{channel}")
@@ -543,12 +547,28 @@ def fluorescence_heatmap(data_path, conditions, subconditions, channel, time_int
                     batch_end = min(batch_start + batch_size, len(image_files))
                     batch_files = image_files[batch_start:batch_end]
 
+                    # Resolve vmax for this specific movie (condition/subcondition)
+                    if isinstance(vmax, dict):
+                        vmax_key_specific = f"{condition}:{subcondition}"
+                        vmax_for_movie = vmax.get(vmax_key_specific, vmax.get(subcondition, None))
+                        if vmax_for_movie is None:
+                            # Fall back to any 'default' key or raise if not provided
+                            vmax_for_movie = vmax.get("default", None)
+                            if vmax_for_movie is None:
+                                raise ValueError(f"vmax dict missing key for '{vmax_key_specific}' or '{subcondition}' and no 'default' provided.")
+                    elif isinstance(vmax, (list, tuple)):
+                        if len(vmax) != len(subconditions):
+                            raise ValueError(f"Length of vmax list ({len(vmax)}) must equal number of subconditions ({len(subconditions)}).")
+                        vmax_for_movie = vmax[sub_idx]
+                    else:
+                        vmax_for_movie = vmax
+
                     # Prepare arguments for multiprocessing
                     if custom_title:
-                        args = [(image_file, output_directory_path, channel, slope, intercept, vmax, time_interval, i, show_scalebar, min_frame, skip_frames, condition, subcondition, custom_title)
+                        args = [(image_file, output_directory_path, channel, slope, intercept, vmax_for_movie, time_interval, i, show_scalebar, min_frame, skip_frames, condition, subcondition, custom_title)
                                 for i, image_file in enumerate(batch_files, start=batch_start + min_frame)]
                     else:
-                        args = [(image_file, output_directory_path, channel, slope, intercept, vmax, time_interval, i, show_scalebar, min_frame, skip_frames, condition, subcondition)
+                        args = [(image_file, output_directory_path, channel, slope, intercept, vmax_for_movie, time_interval, i, show_scalebar, min_frame, skip_frames, condition, subcondition)
                                 for i, image_file in enumerate(batch_files, start=batch_start + min_frame)]
 
                     with mp.Pool(mp.cpu_count()) as pool:
@@ -638,8 +658,8 @@ def create_movies(data_path, conditions, subconditions, channel, frame_rate=30, 
 def process_frame(args):
     frame_index, temp_img_dir, conditions, subconditions, channel, grid_rows, grid_cols, data_path = args
     
-    fig, axes = plt.subplots(grid_rows, grid_cols, figsize=(grid_cols * 6, grid_rows * 6))
-    plt.subplots_adjust(hspace=0.1, wspace=0.1)  # Adjust spacing
+    fig, axes = plt.subplots(grid_rows, grid_cols, figsize=(grid_cols * 12, grid_rows * 12))
+    plt.subplots_adjust(hspace=0, wspace=0)  # No spacing between movies
 
     # Ensure axes is always 2D
     if grid_rows == 1 and grid_cols == 1:
@@ -670,6 +690,12 @@ def process_frame(args):
                       col_idx if len(subconditions) > 1 else plot_index % grid_cols]
             ax.imshow(img, cmap='gray', vmin=0, vmax=img.max())
             ax.axis('off')  # Remove axes
+            
+            # Remove all spines to eliminate any border lines
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['bottom'].set_visible(False)
+            ax.spines['left'].set_visible(False)
 
             plot_index += 1
 
