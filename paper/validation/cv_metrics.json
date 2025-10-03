@@ -1,0 +1,13 @@
+{
+  "cv_accuracy": 0.14285714285714285,
+  "cv_macro_f1": 0.125,
+  "perm_acc_mean": 0.5521428571428573,
+  "perm_acc_std": 0.13728490419042252,
+  "n_samples": 14,
+  "n_features": 52,
+  "classes": [
+    "Multiphase",
+    "Slow-Sustained"
+  ],
+  "report": "                precision    recall  f1-score   support\n\n    Multiphase       0.00      0.00      0.00         5\nSlow-Sustained       0.29      0.22      0.25         9\n\n      accuracy                           0.14        14\n     macro avg       0.14      0.11      0.12        14\n  weighted avg       0.18      0.14      0.16        14\n"
+}

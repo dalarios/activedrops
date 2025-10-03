@@ -1,0 +1,17 @@
+State,overall_pattern,count,total,freq
+ADP,A mixed/weak with C&D | B mixed/weak with C&D,10,18,0.5555555555555556
+ADP,A mixed/weak with C&D | B- with both C&D,1,18,0.05555555555555555
+ADP,"A- with C, A+ with D | B mixed/weak with C&D",4,18,0.2222222222222222
+ADP,"A- with C, A+ with D | B+ with C, B- with D",2,18,0.1111111111111111
+ADP,"A- with C, A+ with D | B- with both C&D",1,18,0.05555555555555555
+APO,A mixed/weak with C&D | B mixed/weak with C&D,6,18,0.3333333333333333
+APO,A mixed/weak with C&D | B- with both C&D,2,18,0.1111111111111111
+APO,"A- with C, A+ with D | B mixed/weak with C&D",2,18,0.1111111111111111
+APO,"A- with C, A+ with D | B+ with C, B- with D",4,18,0.2222222222222222
+APO,A- with both C&D | B mixed/weak with C&D,3,18,0.16666666666666666
+APO,A- with both C&D | B- with both C&D,1,18,0.05555555555555555
+ATP,A mixed/weak with C&D | B mixed/weak with C&D,8,18,0.4444444444444444
+ATP,A mixed/weak with C&D | B- with both C&D,4,18,0.2222222222222222
+ATP,"A- with C, A+ with D | B mixed/weak with C&D",3,18,0.16666666666666666
+ATP,"A- with C, A+ with D | B+ with C, B- with D",2,18,0.1111111111111111
+ATP,A- with both C&D | B mixed/weak with C&D,1,18,0.05555555555555555
