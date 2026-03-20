@@ -330,7 +330,7 @@ def reorgTiffsToOriginal(data_path, conditions, subconditions):
             print(f"Moved .tif files from {subcondition_path} to {original_dir_path}")
 
 
-
+ 
 
 ######################################### Video Creation #########################################
 
@@ -340,26 +340,85 @@ def ensure_output_dir(output_dir):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-def calculate_mean_intensity(path):
-    """Calculate mean intensity of an image within a 730x730 radius circle in the center."""
+def detect_droplet_roi(image_path, blur_sigma=20):
+    """Auto-detect the droplet boundary from a high-contrast image (e.g. CY5).
+
+    Uses Gaussian blur + Otsu thresholding to segment the droplet, then keeps
+    only the largest connected component (the droplet itself).
+
+    Returns a boolean mask (True = inside droplet).
+    """
+    from scipy.ndimage import gaussian_filter, label
+    from skimage.filters import threshold_otsu
+
+    img = io.imread(image_path).astype(float)
+    blurred = gaussian_filter(img, sigma=blur_sigma)
+    thresh = threshold_otsu(blurred)
+    binary = blurred > thresh
+
+    # Keep only the largest connected component (the droplet)
+    labeled, num_features = label(binary)
+    if num_features == 0:
+        # Fallback: return a centered circle if detection fails
+        logging.warning(f"Droplet detection failed for {image_path}, using centered circle fallback.")
+        h, w = img.shape
+        Y, X = np.ogrid[:h, :w]
+        dist = np.sqrt((X - w // 2)**2 + (Y - h // 2)**2)
+        return dist <= min(h, w) // 3
+
+    component_sizes = [np.sum(labeled == i) for i in range(1, num_features + 1)]
+    largest_label = np.argmax(component_sizes) + 1
+    mask = labeled == largest_label
+
+    return mask
+
+
+def save_roi_diagnostic(cy5_path, mask, output_path):
+    """Save a diagnostic image showing the detected ROI boundary on the CY5 frame."""
+    img = io.imread(cy5_path).astype(float)
+
+    # Normalize for display
+    p1, p99 = np.percentile(img, [1, 99])
+    img_display = np.clip((img - p1) / (p99 - p1), 0, 1)
+
+    # Find the contour of the mask (boundary pixels)
+    from scipy.ndimage import binary_erosion
+    boundary = mask & ~binary_erosion(mask, iterations=3)
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.imshow(img_display, cmap='gray')
+    # Overlay the boundary in red
+    overlay = np.zeros((*img.shape, 4))
+    overlay[boundary] = [1, 0, 0, 1]  # red, fully opaque
+    ax.imshow(overlay)
+
+    # Add stats
+    droplet_pixels = mask.sum()
+    eff_radius = np.sqrt(droplet_pixels / np.pi)
+    ax.set_title(f"Detected ROI — effective radius: {eff_radius:.0f} px, "
+                 f"area: {droplet_pixels:,} px", fontsize=12)
+    ax.axis('off')
+    fig.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    logging.info(f"ROI diagnostic saved to {output_path}")
+
+
+def _calc_intensity_with_mask(args):
+    """Worker function for multiprocessing: calculate mean intensity within a pre-computed mask."""
+    path, mask = args
     img = io.imread(path)
-    center_x, center_y = img.shape[1] // 2, img.shape[0] // 2
-    radius = 730 // 2
+    return img[mask].mean()
 
-    # Create a mask for the circle
-    Y, X = np.ogrid[:img.shape[0], :img.shape[1]]
-    dist_from_center = np.sqrt((X - center_x)**2 + (Y - center_y)**2)
-    mask = dist_from_center <= radius
 
-    # Apply the mask to the image
-    circular_region = img[mask]
-    circular_region = circular_region.mean()
+def calculate_mean_intensity(path):
+    """Calculate mean intensity of an image within the auto-detected droplet ROI.
 
-    # calculate the mean intensity of the entire image
-    mean_intensity = img.mean()
-
-    # Return mean intensity of the circular region
-    return mean_intensity
+    Auto-detects the droplet boundary using Otsu thresholding. Used for
+    calibration images where no separate CY5 reference is available.
+    """
+    mask = detect_droplet_roi(path, blur_sigma=20)
+    img = io.imread(path)
+    return img[mask].mean()
 
 def calculate_protein_concentration_ug_ml(mean_intensity, intercept, slope):
     """Calculate protein concentration in ng/ul and nM."""
@@ -487,26 +546,47 @@ def process_image(args):
 
 def fluorescence_heatmap(data_path, conditions, subconditions, channel, time_interval_list, vmax, min_frame=0, max_frame=None, skip_frames=1, calibration_curve_paths=None, show_scalebar=True, batch_size=100, custom_title=None):
     """
-    Reads each image as a matrix, creates, and saves a heatmap representing the normalized pixel-wise fluorescence intensity.
+    Generate and save fluorescence intensity heatmaps from image series for each experimental subcondition.
+
+    For each condition/subcondition, this function:
+      - Loads fluorescence images for the selected channel (e.g. 'cy5', 'gfp') from the 
+        appropriate subdirectories (../<condition>/<subcondition>/original).
+      - Normalizes and/or calibrates each image (for non-cy5 channels) using optional calibration images.
+      - Produces a heatmap (PNG) of the intensity for every frame, saving outputs to
+        ../output_data/movies/<condition>_<subcondition>_heatmaps_<channel>/.
+      - Optionally includes a scalebar and custom title on each heatmap.
+
+    This function supports batch processing and multiprocessing for speed and memory efficiency.
 
     Args:
-    - data_path (str): Base directory where the images are stored.
-    - conditions (list): List of conditions defining subdirectories within the data path.
-    - subconditions (list): List of subconditions defining further subdirectories.
-    - channel (str): Channel specifying the fluorescence ('cy5' or 'gfp').
-    - time_interval_list (list): List of time intervals in seconds between frames for each condition.
-    - min_frame (int): Minimum frame number to start processing from.
-    - max_frame (int): Maximum frame number to stop processing at.
-    - vmax (float | list | dict): Maximum value(s) for color scale in the heatmap.
-        If float, applied to all movies. If list, it must have the same length as
-        subconditions and is applied by position to each subcondition for all conditions.
-        If dict, keys can be subcondition names or "condition:subcondition" strings
-        to target specific movies.
-    - skip_frames (int): Interval to skip frames (default is 1, meaning process every frame).
-    - calibration_curve_paths (list): List of file paths for the calibration curve images.
-    - show_scalebar (bool): Whether to show the color scale bar in the heatmap.
-    - batch_size (int): Number of images to process in each batch to avoid memory overload.
-    - custom_title (str or None): Custom title to display on the heatmap. If None or False, use default.
+        data_path (str): Path to the root experiment data directory.
+        conditions (list of str): List of condition names to process.
+        subconditions (list of str): List of subcondition names to process.
+        channel (str): Channel to process (e.g. 'cy5', 'gfp').
+        time_interval_list (list of float): Time interval in seconds between frames for each condition.
+        vmax (float | list | dict): Maximum value(s) to use for color scale normalization. 
+            - If float, used for all subconditions.
+            - If list, must be same length as subconditions and matched by position.
+            - If dict, keys are '<subcondition>' or '<condition>:<subcondition>'; can also use key 'default'.
+        min_frame (int, optional): Starting frame index (default: 0).
+        max_frame (int or None, optional): Last frame index (exclusive, default: None for all).
+        skip_frames (int, optional): Step/stride between frames (default: 1).
+        calibration_curve_paths (list or None, optional): List of calibration image file paths to use for calibration curve (only required for non-cy5 channels).
+        show_scalebar (bool, optional): Whether to add a scale bar to the heatmaps (default: True).
+        batch_size (int, optional): Number of frames to process per subprocess batch (default: 100).
+        custom_title (str or None, optional): Custom title string to display on each heatmap. If None/False, use default title.
+
+    Raises:
+        ValueError: If calibration_curve_paths is missing or length-matched incorrectly for non-cy5 channels, 
+                    or if vmax list/dict is malformed.
+
+    Output:
+        For every input movie (i.e., all selected conditions/subconditions):
+            - PNG heatmaps for all requested frames, saved in corresponding output directory.
+
+    Example:
+        fluorescence_heatmap(data_path="./my_run", conditions=["A", "B"], subconditions=["pos1", "pos2"], 
+                             channel="gfp", time_interval_list=[180, 120], vmax=600, skip_frames=2)
     """
     output_data_dir = os.path.join(data_path, "output_data", "movies")
     ensure_output_dir(output_data_dir)
@@ -530,14 +610,20 @@ def fluorescence_heatmap(data_path, conditions, subconditions, channel, time_int
             # Setup calibration curve for non-cy5 channels
             slope, intercept = None, None
             if channel != "cy5":
-                # Calibration curve data and fit
-                initial_concentration = 285 
-                sample_concentration_values = [initial_concentration/64, initial_concentration/32, initial_concentration/16, initial_concentration/8, initial_concentration/4, initial_concentration/2, ]
+                # Calibration curve data and fit — parse concentrations from filenames
+                import re
+                if calibration_curve_paths is None:
+                    raise ValueError("calibration_curve_paths is required for non-cy5 channels")
+                sample_concentration_values = []
+                for p in sorted(calibration_curve_paths):
+                    fname = os.path.basename(p)
+                    match = re.match(r'(\d+)', fname)
+                    if match:
+                        sample_concentration_values.append(float(match.group(1)))
+                    else:
+                        raise ValueError(f"Could not parse concentration from calibration filename: {fname}")
 
-                if calibration_curve_paths is None or len(calibration_curve_paths) != len(sample_concentration_values):
-                    raise ValueError(f"Mismatch in lengths: {len(calibration_curve_paths)} calibration images, {len(sample_concentration_values)} sample concentrations")
-
-                mean_intensity_calibration = [calculate_mean_intensity(path) for path in calibration_curve_paths]
+                mean_intensity_calibration = [calculate_mean_intensity(path) for path in sorted(calibration_curve_paths)]
                 slope, intercept = np.polyfit(sample_concentration_values, mean_intensity_calibration, 1)
 
             # Progress bar for the entire subcondition
@@ -887,11 +973,24 @@ def quantify_tiffiles(data_path, conditions, subconditions, calibration_curve_pa
     calibration_curve_paths = sorted(calibration_curve_paths)
 
     # Calibration curve data and fit
-    initial_concentration = 285 
-    sample_concentration_values = [initial_concentration/64, initial_concentration/32, initial_concentration/16, initial_concentration/8, initial_concentration/4, initial_concentration/2, ]
+    # Extract concentrations from filenames (e.g. "140ugml.tif" -> 140.0)
+    import re
+    sample_concentration_values = []
+    for p in calibration_curve_paths:
+        fname = os.path.basename(p)
+        match = re.match(r'(\d+)', fname)
+        if match:
+            sample_concentration_values.append(float(match.group(1)))
+        else:
+            raise ValueError(f"Could not parse concentration from calibration filename: {fname}")
+    logging.info(f"Calibration concentrations (ug/ml) from filenames: {sample_concentration_values}")
     with mp.Pool(mp.cpu_count()) as pool:
         mean_intensity_calibration = pool.map(calculate_mean_intensity, calibration_curve_paths)
     slope, intercept = np.polyfit(sample_concentration_values, mean_intensity_calibration, 1)
+
+    # Prepare output directory for ROI diagnostics
+    output_dir = os.path.join(data_path, "output_data")
+    ensure_output_dir(output_dir)
 
     for idx, condition in enumerate(conditions):
         droplet_volume = droplet_volume_list[idx]
@@ -905,12 +1004,40 @@ def quantify_tiffiles(data_path, conditions, subconditions, calibration_curve_pa
                 print(f"No image files found for condition {condition}, subcondition {subcondition}.")
                 continue
 
+            # --- Auto-detect droplet ROI from CY5 (2nd frame) ---
+            cy5_pattern = os.path.join(data_path, condition, subcondition, "original", "*[Cc][Yy]5*.tif")
+            cy5_paths = sorted(glob.glob(cy5_pattern))
+            if len(cy5_paths) >= 2:
+                roi_ref_path = cy5_paths[1]  # 2nd CY5 frame
+            elif cy5_paths:
+                roi_ref_path = cy5_paths[0]
+            else:
+                roi_ref_path = None
+
+            if roi_ref_path is not None:
+                mask = detect_droplet_roi(roi_ref_path)
+                logging.info(f"ROI detected for {condition}-{subcondition}: "
+                             f"{mask.sum():,} px (eff. radius {np.sqrt(mask.sum()/np.pi):.0f} px)")
+                # Save diagnostic image (once per condition/subcondition)
+                diag_path = os.path.join(output_dir, f"roi_diagnostic_{condition}_{subcondition}.png")
+                save_roi_diagnostic(roi_ref_path, mask, diag_path)
+            else:
+                logging.warning(f"No CY5 images found for {condition}-{subcondition}, "
+                                "falling back to per-image auto-detection.")
+                mask = None
 
             # Apply skip_frames in both cases
             paths = paths[::skip_frames]
 
-            with mp.Pool(mp.cpu_count()) as pool:
-                mean_intensity_list = list(tqdm(pool.imap(calculate_mean_intensity, paths), total=len(paths), desc=f"Calculating intensities for {condition} - {subcondition}"))
+            if mask is not None:
+                # Use pre-computed mask from CY5 detection
+                mask_args = [(p, mask) for p in paths]
+                with mp.Pool(mp.cpu_count()) as pool:
+                    mean_intensity_list = list(tqdm(pool.imap(_calc_intensity_with_mask, mask_args), total=len(paths), desc=f"Calculating intensities for {condition} - {subcondition}"))
+            else:
+                # Fallback: auto-detect on each GFP image individually
+                with mp.Pool(mp.cpu_count()) as pool:
+                    mean_intensity_list = list(tqdm(pool.imap(calculate_mean_intensity, paths), total=len(paths), desc=f"Calculating intensities for {condition} - {subcondition}"))
                 
 
             protein_concentration_list = [calculate_protein_concentration_ug_ml(intensity, intercept, slope) for intensity in mean_intensity_list]
@@ -1836,7 +1963,7 @@ def combine_averaged_dataframes(data_path, conditions, subconditions, output_fil
 
 
 
-def merge_expression_piv_data(data_path, output_folder="output_data", expression_file="combined_expression.csv", piv_file="combined_PIV.csv", output_file_name="merged_expression_PIV.csv"):
+def merge_expression_piv_data(data_path, conditions=None, subconditions=None, output_folder="output_data", expression_file="combined_expression.csv", piv_file="combined_PIV.csv", output_file_name="merged_expression_PIV.csv"):
     # Define the full paths to the CSV files
     expression_file_path = os.path.join(data_path, output_folder, expression_file)
     piv_file_path = os.path.join(data_path, output_folder, piv_file)
@@ -1847,6 +1974,15 @@ def merge_expression_piv_data(data_path, output_folder="output_data", expression
     
     # Standardize the column names to match
     expression_df.rename(columns={'Condition': 'condition', 'Subcondition': 'subcondition'}, inplace=True)
+
+    # Filter by conditions and subconditions if provided
+    if conditions is not None:
+        expression_df = expression_df[expression_df['condition'].isin(conditions)]
+        piv_df = piv_df[piv_df['condition'].isin(conditions)]
+    
+    if subconditions is not None:
+        expression_df = expression_df[expression_df['subcondition'].isin(subconditions)]
+        piv_df = piv_df[piv_df['subcondition'].isin(subconditions)]
 
     # Determine which dataframe is longer and set the merge type accordingly
     merge_how = 'left' if len(expression_df) > len(piv_df) else 'right'

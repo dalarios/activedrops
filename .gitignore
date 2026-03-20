@@ -25,6 +25,7 @@
 
 #Ignore images
 *.jpg
+*.png
 *.tif*
 *.eps
 *.ai
@@ -57,6 +58,10 @@
 *.out
 *.synctex.gz
 
+#Ignore web and rich text exports
+*.html
+*.rtf
+
 #Ignore various code garbage.
 *.pyc
 *.ipynb_checkpoints*
@@ -84,5 +89,8 @@ docs/site/
 
 # Directories to ignore
 data/
-
-
+code/3d_structure/
+code/Jiapei/
+data/3d_predictions/
+.claude/
+.venv/
